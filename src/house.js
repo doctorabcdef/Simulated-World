@@ -13,6 +13,11 @@ export function createHouse() {
   };
   const windowSchedule = [];
   house.userData.windowSchedule = windowSchedule;
+  // Shared facade setting-out axes keep the openings vertically aligned.
+  const frontWindowAxes = [-4.10, 4.10];
+  const doorSchedule = [];
+  house.userData.doorSchedule = doorSchedule;
+  house.userData.facadeAxes = { front: [-4.10, 0, 4.10], rightCenter: -1.80 };
   const batches = new Map();
   const boxGeo = new THREE.BoxGeometry(1, 1, 1);
   const rodGeo = new THREE.CylinderGeometry(1, 1, 1, 10);
@@ -112,23 +117,23 @@ export function createHouse() {
   box(12, 3, .25, 0, 1.6, -4.28, mat.concrete);
   box(.27, 3, 8.8, -5.88, 1.6, 0);
   box(.27, 3, 8.8, 5.88, 1.6, 0, mat.concrete);
-  box(3.9, 3, .26, -3.95, 1.6, 4.28);
-  box(2.4, 3, .26, 4.75, 1.6, 4.28);
-  box(.36, 3.1, .4, -1.81, 1.63, 4.28);
-  box(.42, 3.1, .4, 3.32, 1.63, 4.28);
-  box(5.1, .34, .3, .8, 2.98, 4.28);
-  box(5.1, 2.72, .13, .8, 1.48, -1.3, mat.interior);
-  box(5.1, .06, 5.4, .8, .19, 1.4, mat.floor);
-  box(.15, 2.7, 5.5, -1.69, 1.48, 1.5, mat.interior);
-  box(.15, 2.7, 5.5, 3.10, 1.48, 1.5, mat.interior);
+  for (const side of [-1, 1]) {
+    box(3.23, 3, .26, side * 4.385, 1.6, 4.28);
+    box(.42, 3.1, .4, side * 2.56, 1.63, 4.28);
+    box(.15, 2.7, 5.5, side * 2.63, 1.48, 1.5, mat.interior);
+  }
+  box(5.54, .34, .3, 0, 2.98, 4.28);
+  box(5.54, 2.72, .13, 0, 1.48, -1.3, mat.interior);
+  box(5.54, .06, 5.4, 0, .19, 1.4, mat.floor);
 
   // A closed galvanized curtain: individual folded slats, deep guides, hood,
   // bottom rail and a recessed pull handle distinguish it from a glazed door.
   const shutter = new THREE.Group();
   shutter.name = 'ground-floor-roller-shutter';
-  shutter.position.set(.74, .15, 4.43);
+  shutter.position.set(0, .15, 4.43);
   const shutterWidth = 4.62, shutterHeight = 2.62, slatCount = 39;
   shutter.userData = { width: shutterWidth, height: shutterHeight, slatCount, state: 'closed', floor: 1 };
+  doorSchedule.push({ floor: 1, kind: 'roller-shutter', center: [0, .15 + shutterHeight / 2, 4.43], width: shutterWidth, height: shutterHeight });
   const shutterMetal = new THREE.MeshStandardMaterial({ color: '#aab3b3', metalness: .66, roughness: .43 });
   const shutterEdge = new THREE.MeshStandardMaterial({ color: '#d0d7d5', metalness: .72, roughness: .35 });
   const shutterSeam = new THREE.MeshStandardMaterial({ color: '#737f7e', metalness: .48, roughness: .55 });
@@ -185,12 +190,10 @@ export function createHouse() {
     for (const dy of [-height / 2, height / 2]) box(width + .07, .065, .12, cx, cy + dy, z + facing * .07, mat.dark);
     box(width + .22, .075, .24, cx, cy - height / 2 - .07, z + facing * .05, mat.concrete);
   }
-  frontWindow(2, -4.62, 4.94);
-  frontWindow(2, 2.35, 4.94);
+  for (const x of frontWindowAxes) frontWindow(2, x, 4.94);
   // Narrow top lights and sliding double leaf window frames.
-  for (const x of [-4.62, 2.35]) box(windowSizes[2].width, .055, .12, x, 5.58, 4.53, mat.dark);
-  frontWindow(1, -4.23, 1.65);
-  frontWindow(1, 4.75, 1.65);
+  for (const x of frontWindowAxes) box(windowSizes[2].width, .055, .12, x, 5.58, 4.53, mat.dark);
+  for (const x of frontWindowAxes) frontWindow(1, x, 1.65);
 
   function inscription(text, w, h) {
     const c = document.createElement('canvas'); c.width = w; c.height = h;
@@ -203,30 +206,45 @@ export function createHouse() {
     const map = new THREE.CanvasTexture(c); map.colorSpace = THREE.SRGBColorSpace;
     return new THREE.MeshStandardMaterial({ map, roughness: .9 });
   }
-  const doorX = -1.53, doorY = 4.78, doorW = 2.03, doorH = 2.85;
-  box(doorW + .26, doorH + .15, .14, doorX, doorY, 4.46, mat.concrete);
-  box(doorW, doorH, .15, doorX, doorY, 4.57, mat.dark);
+  const doorY = 4.78, doorZ = 4.57, doorW = 2.03, doorH = 2.85;
+  const frontDoor = new THREE.Group();
+  frontDoor.name = 'second-floor-front-door';
+  frontDoor.position.set(0, doorY, doorZ);
+  frontDoor.userData = { floor: 2, width: doorW, height: doorH, kind: 'double-door' };
+  doorSchedule.push({ floor: 2, kind: 'double-door', center: [0, doorY, doorZ], width: doorW, height: doorH });
+  function doorBox(name, size, position, material, rotation) {
+    const mesh = new THREE.Mesh(boxGeo, material);
+    mesh.name = name; mesh.scale.set(...size); mesh.position.set(...position);
+    if (rotation) mesh.rotation.set(...rotation);
+    mesh.castShadow = mesh.receiveShadow = true; frontDoor.add(mesh);
+  }
+  doorBox('door-frame', [doorW + .26, doorH + .15, .14], [0, 0, -.11], mat.concrete);
+  doorBox('double-door-leaves', [doorW, doorH, .15], [0, 0, 0], mat.dark);
   for (const sign of [-1, 1]) {
-    const x = doorX + sign * .50;
-    box(.88, 1.55, .07, x, 5.21, 4.675, mat.glass);
-    box(.77, .70, .07, x, 3.95, 4.675, mat.dark);
-    for (const dx of [-.42, .42]) box(.035, 2.54, .075, x + dx, 4.74, 4.72, mat.dark);
-    for (const yy of [3.53, 4.32, 4.40, 5.99]) box(.87, .035, .065, x, yy, 4.72, mat.dark);
-    rod([doorX + sign * .10, 4.24, 4.82], [doorX + sign * .10, 4.63, 4.82], .025, mat.steelDark);
-    box(.075, .12, .08, doorX + sign * .10, 4.4, 4.78, mat.steelDark);
-    box(.24, 2.17, .018, doorX + sign * 1.23, 5.04, 4.437,
+    const x = sign * .50;
+    doorBox('door-glazing', [.88, 1.55, .07], [x, .43, .105], mat.glass);
+    doorBox('lower-door-panel', [.77, .70, .07], [x, -.83, .105], mat.dark);
+    for (const dx of [-.42, .42]) doorBox('leaf-stile', [.035, 2.54, .075], [x + dx, -.04, .15], mat.dark);
+    for (const yy of [-1.25, -.46, -.38, 1.21]) doorBox('leaf-rail', [.87, .035, .065], [x, yy, .15], mat.dark);
+    const handle = new THREE.Mesh(rodGeo, mat.steelDark);
+    handle.name = 'door-pull-handle'; handle.scale.set(.025, .39, .025);
+    handle.position.set(sign * .10, -.345, .25);
+    handle.castShadow = handle.receiveShadow = true; frontDoor.add(handle);
+    doorBox('handle-mount', [.075, .12, .08], [sign * .10, -.38, .21], mat.steelDark);
+    doorBox('spring-couplet', [.24, 2.17, .018], [sign * 1.23, .26, -.133],
       inscription(sign < 0 ? '家和人兴百福来' : '平安富贵满堂春', 96, 768));
   }
-  box(2.25, .10, .43, doorX, 3.37, 4.68, mat.concrete);
-  box(.35, .35, .018, doorX, 6.07, 4.69, inscription('福', 192, 192), [0, 0, Math.PI / 4]);
-  box(.15, .12, .03, -.02, 4.28, 4.448, mat.steelDark);
+  doorBox('door-threshold', [2.25, .10, .43], [0, -1.41, .11], mat.concrete);
+  doorBox('fu-ornament', [.35, .35, .018], [0, 1.29, .12], inscription('福', 192, 192), [0, 0, Math.PI / 4]);
+  doorBox('door-light-switch', [.15, .12, .03], [1.51, -.50, -.122], mat.steelDark);
+  house.add(frontDoor);
 
   // Low unfinished attic, with three dark paired windows.
   box(12, 1.52, .22, 0, 7.585, 4.28, mat.concrete);
   box(12, 1.52, .22, 0, 7.585, -4.28, mat.concrete);
   box(.25, 1.37, 8.6, 5.88, 7.51, 0, mat.concrete);
   box(.25, 1.37, 8.6, -5.88, 7.51, 0, mat.concrete);
-  for (const x of [-4.74, -1.72, 2.43]) frontWindow(3, x, 7.56, 4.41);
+  for (const x of house.userData.facadeAxes.front) frontWindow(3, x, 7.56, 4.41);
   // Solid triangular gable ends.
   const gable = new THREE.Shape(); gable.moveTo(-4.3, 8.10); gable.lineTo(4.3, 8.10); gable.lineTo(4.3, 8.34); gable.lineTo(0, 10.15); gable.lineTo(-4.3, 8.34); gable.closePath();
   const gableGeo = new THREE.ShapeGeometry(gable);
@@ -248,10 +266,10 @@ export function createHouse() {
     for (const yy of [y - h / 2, y + h / 2]) box(.12, .07, w + .08, x + .11, yy, z, mat.dark);
     box(.21, .07, w + .24, x + .08, y - h / 2 - .07, z, mat.concrete);
   }
-  sideWindow(2, -.8, 4.94);
-  sideWindow(2, -3.0, 4.94);
-  sideWindow(1, -2.0, 1.65);
-  sideWindow(3, -1.5, 7.56);
+  const sideCenter = house.userData.facadeAxes.rightCenter;
+  for (const offset of [-1.10, 1.10]) sideWindow(2, sideCenter + offset, 4.94);
+  sideWindow(1, sideCenter, 1.65);
+  sideWindow(3, sideCenter, 7.56);
   box(.08, 2.48, .96, 6.075, 4.64, 2.95, mat.recess);
   box(.14, 2.58, .055, 6.12, 4.65, 3.44, mat.dark);
   box(.14, 2.58, .055, 6.12, 4.65, 2.45, mat.dark);
@@ -306,10 +324,15 @@ export function createHouse() {
   railing([7.15, 6.37], [7.15, 10.78], 3.34, 4, -3.34);
 
   // Stored screen doors, timber, doormats, conduit and daily-life details.
-  for (const [x, w, tilt] of [[4.15, .88, -.09], [5.21, .94, -.035]]) {
-    box(w, 2.1, .065, x, 4.42, 4.93, mat.panel, [tilt, 0, 0]);
-    for (const dx of [-w / 2, w / 2]) box(.027, 2.15, .082, x + dx, 4.42, 4.94, mat.steelDark, [tilt, 0, 0]);
-    for (const yy of [3.37, 5.46]) box(w, .037, .083, x, yy, 4.94, mat.steelDark);
+  // The panels are stored against the blank side-wall bay, clear of all windows.
+  for (const [x, z, w, tilt] of [[6.25, 1.20, .88, .09], [6.40, 1.42, .94, .035]]) {
+    const cos = Math.cos(tilt), sin = Math.sin(tilt);
+    // Bake one rigid panel transform into every part, retaining instancing.
+    const panelPart = (width, height, depth, dx, dy, dz, material) =>
+      box(width, height, depth, x + dx * cos - dy * sin, 4.42 + dx * sin + dy * cos, z + dz, material, [0, 0, tilt]);
+    panelPart(.065, 2.1, w, 0, 0, 0, mat.panel);
+    for (const dz of [-w / 2, w / 2]) panelPart(.082, 2.15, .027, .01, 0, dz, mat.steelDark);
+    for (const dy of [-1.05, 1.05]) panelPart(.083, .037, w, .01, dy, 0, mat.steelDark);
   }
   box(.55, .012, .30, 3.11, 3.37, 4.81, mat.panel);
   box(.58, .018, .36, 6.56, 3.37, 3.19, mat.red, [0, -.3, 0]);

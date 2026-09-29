@@ -73,12 +73,35 @@ try {
 
   const architecture = await page.evaluate(() => {
     const { house } = window.__scene;
+    house.updateWorldMatrix(true, true);
     const shutter = house.getObjectByName('ground-floor-roller-shutter');
+    const upperDoor = house.getObjectByName('second-floor-front-door');
     const slats = shutter?.getObjectByName('galvanized-slats');
     const firstSlat = house.matrix.clone();
     slats?.getMatrixAt(0, firstSlat);
+    const windowRecesses = [];
+    house.traverse(object => {
+      if (!object.isInstancedMesh || object.geometry.type !== 'BoxGeometry') return;
+      const matrix = house.matrix.clone();
+      for (let index = 0; index < object.count; index++) {
+        object.getMatrixAt(index, matrix);
+        const e = matrix.elements;
+        // Window recess boxes have a .065 m front depth or a .10 m side depth.
+        // Extract actual transforms, independently of the window schedule.
+        if ((Math.abs(e[10] - .065) < .0001 && e[0] > 1 && e[5] > .7)
+          || (Math.abs(e[0] - .10) < .0001 && e[10] > 1 && e[5] > .7)) {
+          windowRecesses.push({ center: [e[12], e[13], e[14]], size: [e[0], e[5], e[10]] });
+        }
+      }
+    });
     return {
       windows: house.userData.windowSchedule,
+      doors: house.userData.doorSchedule,
+      windowRecesses,
+      doorPositions: [shutter, upperDoor].map(door => door && {
+        floor: door.userData.floor,
+        position: door.getWorldPosition(house.position.clone()).toArray(),
+      }),
       shutter: shutter && {
         ...shutter.userData,
         actualSlatCount: slats?.count,
@@ -103,6 +126,40 @@ try {
   }
   assert.equal(new Set(floorSizes.map(size => size.height)).size, 3, 'Different floors retain their different window proportions');
   passed('Windows share dimensions within each floor', floorSizes.map(({ floor, width, height }) => `F${floor} ${width} × ${height} m`).join('; '));
+  const closeTo = (actual, expected, label, tolerance = .0001) => assert.ok(Math.abs(actual - expected) < tolerance, `${label}: expected ${expected}, got ${actual}`);
+  for (const floor of [1, 2, 3]) {
+    const front = architecture.windows.filter(window => window.floor === floor && window.facade === 'front').sort((a, b) => a.center[0] - b.center[0]);
+    const expectedAxes = floor === 3 ? [-4.1, 0, 4.1] : [-4.1, 4.1];
+    assert.deepEqual(front.map(window => window.center[0]), expectedAxes, `Floor ${floor}: front windows must align with shared facade axes`);
+    closeTo(front[0].center[0] + front.at(-1).center[0], 0, `Floor ${floor}: left/right windows are symmetric`);
+    assert.ok(front.every(window => window.center[1] === front[0].center[1]), `Floor ${floor}: windows have equal sill heights`);
+    if (floor === 3) closeTo(front[1].center[0] - front[0].center[0], front[2].center[0] - front[1].center[0], 'Third-floor window spacing');
+    const side = architecture.windows.filter(window => window.floor === floor && window.facade === 'right').sort((a, b) => a.center[2] - b.center[2]);
+    assert.equal(side.length, floor === 2 ? 2 : 1);
+    closeTo((side[0].center[2] + side.at(-1).center[2]) / 2, -1.8, `Floor ${floor}: side windows share a symmetric centerline`);
+  }
+  for (const window of architecture.windows) {
+    const side = window.facade === 'right';
+    const facing = window.facade === 'rear' ? -1 : 1;
+    const expectedCenter = side
+      ? [window.center[0] + .04, window.center[1], window.center[2]]
+      : [window.center[0], window.center[1], window.center[2] + facing * .02];
+    const expectedSize = side ? [.10, window.height, window.width] : [window.width, window.height, .065];
+    assert.ok(architecture.windowRecesses.some(recess => recess.center.every((value, axis) => Math.abs(value - expectedCenter[axis]) < .0001)
+      && recess.size.every((value, axis) => Math.abs(value - expectedSize[axis]) < .0001)), `Floor ${window.floor} ${window.facade}: scheduled window at ${window.center} must have matching rendered geometry`);
+  }
+  passed('Windows align symmetrically across floors with evenly spaced attic windows', 'Front axes −4.10 / 0 / +4.10 m; actual recess geometry verified');
+  assert.equal(architecture.doors?.length, 2, 'Both principal entrances must be recorded');
+  for (const floor of [1, 2]) {
+    const door = architecture.doors.find(door => door.floor === floor);
+    const actual = architecture.doorPositions.find(door => door?.floor === floor);
+    assert.ok(door && actual, `Floor ${floor}: principal entrance must exist as geometry and schedule`);
+    closeTo(door.center[0], 0, `Floor ${floor}: scheduled door centered on facade`);
+    closeTo(actual.position[0], 0, `Floor ${floor}: rendered door centered on facade`);
+    assert.ok(actual.position[2] > 4.3 && actual.position[2] < 4.7, `Floor ${floor}: entrance lies on the front facade`);
+    closeTo(actual.position[2], door.center[2], `Floor ${floor}: schedule matches actual entrance depth`);
+  }
+  passed('First- and second-floor entrances are centered and vertically aligned', 'Both actual entrance groups share x = 0');
   assert.ok(architecture.shutter, 'Ground entrance must have a roller shutter');
   assert.equal(architecture.shutter.state, 'closed');
   assert.equal(architecture.shutter.actualSlatCount, 39);
@@ -128,22 +185,53 @@ try {
       'village-pole-lamp-and-overhead-wires',
     ];
     const bounds = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
+    const localBounds = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
     vehicle?.updateWorldMatrix(true, true);
+    const inverseVehicleMatrix = vehicle?.matrixWorld.clone().invert();
     let vehicleMeshes = 0;
+    const vehicleFeatures = [];
     vehicle?.traverse(object => {
       if (!object.isMesh) return;
       vehicleMeshes++;
       object.geometry.computeBoundingBox();
-      const box = object.geometry.boundingBox.clone().applyMatrix4(object.matrixWorld);
-      box.min.toArray().forEach((value, index) => { bounds.min[index] = Math.min(bounds.min[index], value); });
-      box.max.toArray().forEach((value, index) => { bounds.max[index] = Math.max(bounds.max[index], value); });
+      for (let instance = 0; instance < (object.isInstancedMesh ? object.count : 1); instance++) {
+        const worldMatrix = object.matrixWorld.clone();
+        if (object.isInstancedMesh) {
+          const instanceMatrix = object.matrix.clone();
+          object.getMatrixAt(instance, instanceMatrix);
+          worldMatrix.multiply(instanceMatrix);
+        }
+        const box = object.geometry.boundingBox.clone().applyMatrix4(worldMatrix);
+        box.min.toArray().forEach((value, index) => { bounds.min[index] = Math.min(bounds.min[index], value); });
+        box.max.toArray().forEach((value, index) => { bounds.max[index] = Math.max(bounds.max[index], value); });
+        const localBox = object.geometry.boundingBox.clone().applyMatrix4(inverseVehicleMatrix.clone().multiply(worldMatrix));
+        localBox.min.toArray().forEach((value, index) => { localBounds.min[index] = Math.min(localBounds.min[index], value); });
+        localBox.max.toArray().forEach((value, index) => { localBounds.max[index] = Math.max(localBounds.max[index], value); });
+      }
     });
+    for (const name of ['sculpted-body', 'green-wraparound-glazing', 'body-trim-and-sliding-door', 'silver-door-mirrors', 'four-steel-wheels', 'stamped-roof-ribs', 'classic-shuttle-front', 'rear-tailgate-and-lamps', 'jac-and-refine-badging']) {
+      const feature = vehicle?.getObjectByName(name);
+      const featureBounds = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
+      let meshCount = 0;
+      feature?.traverse(object => {
+        if (!object.isMesh) return;
+        meshCount++;
+        object.geometry.computeBoundingBox();
+        const box = object.geometry.boundingBox.clone().applyMatrix4(inverseVehicleMatrix.clone().multiply(object.matrixWorld));
+        box.min.toArray().forEach((value, axis) => { featureBounds.min[axis] = Math.min(featureBounds.min[axis], value); });
+        box.max.toArray().forEach((value, axis) => { featureBounds.max[axis] = Math.max(featureBounds.max[axis], value); });
+      });
+      vehicleFeatures.push({ name, meshCount, bounds: featureBounds });
+    }
     return {
       forecourtVisible: forecourt?.visible,
       landmarks: landmarkNames.map(name => ({ name, present: !!forecourt?.getObjectByName(name) })),
       vehiclePosition: vehicle?.position.toArray(),
       vehicleMeshes,
       vehicleBounds: bounds,
+      vehicleDimensions: localBounds.max.map((value, axis) => value - localBounds.min[axis]),
+      vehicleMetadata: vehicle?.userData,
+      vehicleFeatures,
     };
   });
   assert.ok(forecourtState.forecourtVisible, 'The courtyard must be visible with the surrounding environment');
@@ -156,6 +244,24 @@ try {
   assert.ok(forecourtState.vehicleBounds.max[0] < 6.08, 'Parked vehicle must clear the exterior staircase');
   assert.ok(forecourtState.vehicleBounds.min[2] > 10.78, 'Parked vehicle must remain beyond the staircase landing');
   passed('Forecourt environment and parked silver minivan', `${forecourtState.landmarks.length} photographed landmarks; vehicle clear of stairs`);
+  assert.equal(forecourtState.vehicleMetadata?.vehicleMake, 'JAC');
+  assert.equal(forecourtState.vehicleMetadata?.vehicleModel, '瑞风穿梭');
+  const [vehicleWidth, vehicleHeight, vehicleLength] = forecourtState.vehicleDimensions;
+  assert.ok(vehicleWidth > 2 && vehicleWidth < 2.3, `JAC width including mirrors must be plausible: ${vehicleWidth}`);
+  assert.ok(vehicleHeight > 1.9 && vehicleHeight < 2.1, `JAC high roof must have a plausible height: ${vehicleHeight}`);
+  assert.ok(vehicleLength > 4.95 && vehicleLength < 5.15, `JAC classic Shuttle body must have a plausible length: ${vehicleLength}`);
+  passed('Parked vehicle matches JAC Refine Chuansuo proportions', `${vehicleLength.toFixed(3)} m long × ${vehicleWidth.toFixed(3)} m wide including mirrors × ${vehicleHeight.toFixed(3)} m high`);
+  for (const feature of forecourtState.vehicleFeatures) {
+    assert.ok(feature.meshCount > 0, `JAC recognizable feature must contain actual geometry: ${feature.name}`);
+  }
+  const featureBounds = name => forecourtState.vehicleFeatures.find(feature => feature.name === name).bounds;
+  // This group also includes bonnet seams extending back to z ≈ 1.83 m.
+  assert.ok(featureBounds('classic-shuttle-front').min[2] > 1.7 && featureBounds('classic-shuttle-front').max[2] > 2.45, 'Classic JAC front details must remain ahead of the cabin and extend to the nose');
+  assert.ok(featureBounds('rear-tailgate-and-lamps').max[2] < -2, 'Tailgate and rear lamps must sit at the rear of the vehicle');
+  assert.ok(featureBounds('stamped-roof-ribs').min[1] > 1.8, 'Stamped ribs must be on the high roof');
+  assert.ok(featureBounds('four-steel-wheels').max[1] < .85, 'Wheels must stay below the passenger cabin');
+  assert.ok(featureBounds('silver-door-mirrors').min[0] < -.95 && featureBounds('silver-door-mirrors').max[0] > .95, 'Both door mirrors must extend beyond the body');
+  passed('JAC Chuansuo body details are modeled as visible geometry', 'High ribbed roof, side sliding door, mirrors, four wheels, classic front, tailgate and badging');
 
   for (const name of ['orbit', 'front', 'top', 'courtyard', 'reference']) {
     const before = await state();
@@ -164,7 +270,10 @@ try {
     const after = await state();
     assert.notDeepEqual(after.position, before.position, `${name} should change camera position`);
     assert.equal(after.autoRotate, false);
-    if (name === 'front') assert.ok(Math.abs(after.position[0] - after.target[0]) < 0.01, 'Front view should face the front elevation');
+    if (name === 'front') {
+      assert.ok(Math.abs(after.position[0] - after.target[0]) < 0.01, 'Front view should face the front elevation');
+      await page.screenshot({ path: path.join(output, 'facade-aligned.png') });
+    }
     if (name === 'top') assert.ok(after.position[1] - after.target[1] > 20, 'Aerial view should rise over the roof');
     if (name === 'courtyard') {
       assert.ok(after.target[2] - after.position[2] > 10, 'Courtyard view should look outward from the house along +Z');
@@ -311,7 +420,7 @@ try {
 
   assert.deepEqual(errors, [], 'Browser should report no JavaScript or rendering errors');
   passed('No browser errors');
-  const report = { baseURL, checkedAt: new Date().toISOString(), browser: browser.version(), checks, errors, warnings: [...new Set(warnings)], artifacts: ['desktop.png', 'courtyard.png', 'mobile.png', 'mobile-settings.png', 'scene.png', 'mountain-home.glb'] };
+  const report = { baseURL, checkedAt: new Date().toISOString(), browser: browser.version(), checks, errors, warnings: [...new Set(warnings)], artifacts: ['desktop.png', 'facade-aligned.png', 'courtyard.png', 'mobile.png', 'mobile-settings.png', 'scene.png', 'mountain-home.glb'] };
   await writeFile(path.join(output, 'verification.json'), JSON.stringify(report, null, 2));
   console.log(`Verified ${checks.length} checks. Artifacts saved to ${output}`);
 } catch (error) {

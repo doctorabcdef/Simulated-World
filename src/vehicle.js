@@ -1,45 +1,43 @@
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
-// A small, tall-roof silver MPV. Front is +Z, rear is -Z; the tires meet Y = 0.
-// Static pieces are merged by material so the complete vehicle uses 11 draws.
+// Classic long-wheelbase 瑞风穿梭, using the photographed car and 2011–2012
+// Shuttle body: 5035 × 1820 × 1970 mm; 3080 mm wheelbase. Front +Z, ground Y=0.
 export function createVehicle(THREE) {
   const vehicle = new THREE.Group();
   vehicle.name = 'silver-minivan';
   const materials = {
-    paint: new THREE.MeshStandardMaterial({ color: '#aeb9c4', metalness: .75, roughness: .28 }),
-    highlight: new THREE.MeshStandardMaterial({ color: '#cad1d8', metalness: .76, roughness: .27 }),
-    rubber: new THREE.MeshStandardMaterial({ color: '#202526', roughness: .88 }),
-    trim: new THREE.MeshStandardMaterial({ color: '#343e43', metalness: .32, roughness: .46 }),
-    glass: new THREE.MeshStandardMaterial({ color: '#173632', metalness: .20, roughness: .22, envMapIntensity: .20, side: THREE.DoubleSide }),
-    chrome: new THREE.MeshStandardMaterial({ color: '#b9c1c6', metalness: .96, roughness: .2 }),
-    red: new THREE.MeshStandardMaterial({ color: '#8d1717', metalness: .14, roughness: .23 }),
-    amber: new THREE.MeshStandardMaterial({ color: '#bb652c', metalness: .1, roughness: .26 }),
-    lamp: new THREE.MeshStandardMaterial({ color: '#d4dbcc', metalness: .2, roughness: .17 }),
-    plate: new THREE.MeshStandardMaterial({ color: '#354d64', metalness: .2, roughness: .5 }),
-    seam: new THREE.MeshStandardMaterial({ color: '#64717b', metalness: .55, roughness: .43 }),
+    paint: new THREE.MeshStandardMaterial({ color: '#aeb9c5', metalness: .68, roughness: .29 }),
+    highlight: new THREE.MeshStandardMaterial({ color: '#c5cdd3', metalness: .72, roughness: .28 }),
+    rubber: new THREE.MeshStandardMaterial({ color: '#1c2225', roughness: .88 }),
+    trim: new THREE.MeshStandardMaterial({ color: '#273036', metalness: .28, roughness: .47 }),
+    glass: new THREE.MeshStandardMaterial({ color: '#173e38', metalness: .23, roughness: .18, envMapIntensity: .48, side: THREE.DoubleSide }),
+    chrome: new THREE.MeshStandardMaterial({ color: '#c5cacf', metalness: .93, roughness: .22 }),
+    red: new THREE.MeshStandardMaterial({ color: '#951c21', metalness: .15, roughness: .24, side: THREE.DoubleSide }),
+    amber: new THREE.MeshStandardMaterial({ color: '#d58b3b', metalness: .12, roughness: .25, side: THREE.DoubleSide }),
+    lamp: new THREE.MeshStandardMaterial({ color: '#d8e1df', metalness: .33, roughness: .16, side: THREE.DoubleSide }),
+    plate: new THREE.MeshStandardMaterial({ color: '#284662', metalness: .15, roughness: .54 }),
+    seam: new THREE.MeshStandardMaterial({ color: '#66747d', metalness: .46, roughness: .40 }),
   };
-  const batches = new Map(Object.keys(materials).map(key => [key, []]));
-  const matrix = new THREE.Matrix4();
-  const quaternion = new THREE.Quaternion();
-  const up = new THREE.Vector3(0, 1, 0);
+  const batches = new Map();
+  let feature = 'sculpted-body';
+  const matrix = new THREE.Matrix4(), quaternion = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
   function add(geometry, material, position = [0, 0, 0], rotation = [0, 0, 0], scale = [1, 1, 1]) {
     const source = geometry.index ? geometry.toNonIndexed() : geometry;
     if (source !== geometry) geometry.dispose();
-    for (const name of Object.keys(source.attributes)) {
-      if (name !== 'position' && name !== 'normal') source.deleteAttribute(name);
-    }
+    for (const name of Object.keys(source.attributes)) if (name !== 'position' && name !== 'normal') source.deleteAttribute(name);
     if (!source.attributes.normal) source.computeVertexNormals();
     quaternion.setFromEuler(new THREE.Euler(...rotation));
     matrix.compose(new THREE.Vector3(...position), quaternion, new THREE.Vector3(...scale));
     source.applyMatrix4(matrix);
-    batches.get(material).push(source);
+    const key = `${feature}:${material}`;
+    if (!batches.has(key)) batches.set(key, []);
+    batches.get(key).push(source);
   }
   function box(w, h, d, x, y, z, material, rotation = [0, 0, 0]) {
     add(new THREE.BoxGeometry(w, h, d), material, [x, y, z], rotation);
   }
   function rod(a, b, radius, material, segments = 6) {
-    const start = new THREE.Vector3(...a), end = new THREE.Vector3(...b);
-    const direction = end.clone().sub(start);
+    const start = new THREE.Vector3(...a), end = new THREE.Vector3(...b), direction = end.clone().sub(start);
     const geometry = new THREE.CylinderGeometry(radius, radius, direction.length(), segments);
     geometry.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(up, direction.normalize()));
     add(geometry, material, start.add(end).multiplyScalar(.5).toArray());
@@ -56,161 +54,282 @@ export function createVehicle(THREE) {
     for (let i = 1; i < points.length; i++) rod(points[i - 1], points[i], radius, material);
     if (closed) rod(points.at(-1), points[0], radius, material);
   }
-
-  // Sculpted lower body, with actual wheel-arch cutouts and softly rounded edges.
+  function curvedPanel(point, columns, rows, material) {
+    const positions = [], indices = [];
+    for (let v = 0; v <= rows; v++) for (let u = 0; u <= columns; u++) positions.push(...point(u / columns * 2 - 1, v / rows));
+    for (let v = 0; v < rows; v++) for (let u = 0; u < columns; u++) {
+      const a = v * (columns + 1) + u, b = a + 1, c = a + columns + 1, d = c + 1;
+      indices.push(a, b, d, a, d, c);
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    add(geometry, material);
+  }
+  // Soft bevels, rounded bonnet, and genuine cut-outs over all four tires.
   const profile = new THREE.Shape();
-  profile.moveTo(-2.12, .47);
-  profile.lineTo(-2.13, .92);
-  profile.quadraticCurveTo(-2.1, 1.055, -1.91, 1.055);
-  profile.lineTo(1.51, 1.055);
-  profile.quadraticCurveTo(1.92, 1.055, 2.12, .96);
-  profile.lineTo(2.17, .56);
-  profile.quadraticCurveTo(2.13, .45, 1.72, .44);
-  profile.lineTo(1.70, .45);
-  profile.bezierCurveTo(1.68, .96, .95, .96, .93, .45);
-  profile.lineTo(-.94, .45);
-  profile.bezierCurveTo(-.96, .96, -1.71, .96, -1.73, .45);
+  profile.moveTo(-2.43, .43);
+  profile.lineTo(-2.445, 1.04);
+  profile.quadraticCurveTo(-2.41, 1.17, -2.22, 1.17);
+  profile.lineTo(1.56, 1.17);
+  profile.quadraticCurveTo(1.98, 1.165, 2.27, 1.06);
+  profile.quadraticCurveTo(2.43, 1.02, 2.45, .88);
+  profile.lineTo(2.455, .50);
+  profile.quadraticCurveTo(2.45, .44, 2.00, .43);
+  profile.lineTo(1.94, .43);
+  profile.bezierCurveTo(1.93, .97, 1.13, .97, 1.11, .43);
+  profile.lineTo(-1.12, .43);
+  profile.bezierCurveTo(-1.13, .97, -1.92, .97, -1.94, .43);
   profile.closePath();
-  const body = new THREE.ExtrudeGeometry(profile, { depth: 1.53, bevelEnabled: true, bevelThickness: .045, bevelSize: .035, bevelSegments: 3, steps: 1, curveSegments: 9 });
+  const body = new THREE.ExtrudeGeometry(profile, { depth: 1.71, bevelEnabled: true, bevelThickness: .045, bevelSize: .035, bevelSegments: 4, steps: 1, curveSegments: 10 });
   body.rotateY(-Math.PI / 2);
-  body.translate(.765, 0, 0);
-  add(body, 'paint');
-  box(1.40, .17, 3.6, 0, .43, -.02, 'rubber');
+  body.translate(.855, 0, 0);
+  // Wrap the nose around the front corners instead of leaving an extruded
+  // flat front face behind the swept headlamp lenses.
+  const bodyPositions = body.getAttribute('position');
+  for (let i = 0; i < bodyPositions.count; i++) {
+    const x = bodyPositions.getX(i), z = bodyPositions.getZ(i);
+    if (z > 1.90) bodyPositions.setZ(i, z - .20 * Math.pow(Math.abs(x) / .91, 2) * Math.min(1, (z - 1.90) / .52));
+    if (z < -2.20) bodyPositions.setZ(i, z + .063 * Math.pow(Math.abs(x) / .91, 2) * Math.min(1, (-z - 2.20) / .24));
+  }
+  // ExtrudeGeometry duplicates its face vertices; weld them before normal
+  // generation so the bonnet and wheel-arch bevels are smoothly shaded.
+  body.deleteAttribute('normal');
+  body.deleteAttribute('uv');
+  const smoothBody = mergeVertices(body, .0001);
+  smoothBody.computeVertexNormals();
+  body.dispose();
+  add(smoothBody, 'paint');
+  box(1.47, .15, 4.16, 0, .34, -.06, 'rubber');
 
-  // Lofted cabin: narrow roof shoulders, curved crown, and a short sloping nose.
+  // Long H1-derived cabin, narrowing towards a gently crowned roof. The
+  // front sections form the classic single continuous windscreen slope.
   const sections = [
-    [-2.10, 1.20, .73], [-2.035, 1.52, .74], [-1.93, 1.72, .735],
-    [-1.73, 1.81, .73], [-.85, 1.845, .73], [.65, 1.84, .725],
-    [1.10, 1.79, .715], [1.30, 1.54, .72], [1.61, 1.105, .765],
+    [-2.44, 1.36, .805], [-2.37, 1.67, .81], [-2.19, 1.865, .808],
+    [-1.94, 1.933, .802], [-1.20, 1.949, .798], [.61, 1.949, .798],
+    [.92, 1.921, .800], [1.16, 1.821, .810], [1.43, 1.539, .827], [1.84, 1.15, .861],
   ];
-  const vertices = [], indices = [];
+  const vertices = [], indices = [], ringSize = 13;
   for (const [z, top, roofWidth] of sections) {
     const ring = [
-      [-.795, 1.00], [-.793, 1.075], [-roofWidth, top - .073],
-      [-roofWidth + .045, top - .018], [-roofWidth * .65, top + .007],
-      [0, top + .019], [roofWidth * .65, top + .007],
-      [roofWidth - .045, top - .018], [roofWidth, top - .073],
-      [.793, 1.075], [.795, 1.00],
+      [-.895, 1.10], [-.882, 1.17], [-roofWidth, top - .066],
+      [-roofWidth + .018, top - .035], [-roofWidth + .065, top - .013],
+      [-roofWidth * .60, top + .010], [0, top + .021],
+      [roofWidth * .60, top + .010], [roofWidth - .065, top - .013],
+      [roofWidth - .018, top - .035], [roofWidth, top - .066], [.882, 1.17], [.895, 1.10],
     ];
     for (const [x, y] of ring) vertices.push(x, y, z);
   }
-  const n = 11;
-  for (let s = 0; s < sections.length - 1; s++) {
-    for (let i = 0; i < n; i++) {
-      const a = s * n + i, b = s * n + (i + 1) % n, c = (s + 1) * n + i, d = (s + 1) * n + (i + 1) % n;
-      indices.push(a, c, b, b, c, d);
-    }
+  for (let s = 0; s < sections.length - 1; s++) for (let i = 0; i < ringSize; i++) {
+    const a = s * ringSize + i, b = s * ringSize + (i + 1) % ringSize, c = a + ringSize, d = b + ringSize;
+    indices.push(a, c, b, b, c, d);
   }
-  // End caps face outward; they are mostly concealed by the glass and bonnet.
-  for (let i = 1; i < n - 1; i++) indices.push(0, i, i + 1);
-  const last = (sections.length - 1) * n;
-  for (let i = 1; i < n - 1; i++) indices.push(last, last + i + 1, last + i);
+  for (let i = 1; i < ringSize - 1; i++) indices.push(0, i, i + 1);
+  const last = (sections.length - 1) * ringSize;
+  for (let i = 1; i < ringSize - 1; i++) indices.push(last, last + i + 1, last + i);
   const cabin = new THREE.BufferGeometry();
   cabin.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
   cabin.setIndex(indices);
   cabin.computeVertexNormals();
   add(cabin, 'paint');
+  function roofHeight(z) {
+    for (let i = 1; i < sections.length; i++) if (z <= sections[i][0]) {
+      const previous = sections[i - 1], next = sections[i];
+      return THREE.MathUtils.lerp(previous[1], next[1], (z - previous[0]) / (next[0] - previous[0]));
+    }
+    return sections.at(-1)[1];
+  }
 
-  // The broad, lightly green windshield and thin dark gaskets.
-  const windshield = [[-.724, 1.73, 1.19], [.724, 1.73, 1.19], [.784, 1.124, 1.651], [-.784, 1.124, 1.651]];
-  polygon(windshield, 'glass');
-  outline(windshield, .021, 'trim');
-  rod([-.59, 1.145, 1.655], [-.16, 1.21, 1.603], .009, 'rubber');
-  rod([.1, 1.145, 1.655], [.54, 1.21, 1.603], .009, 'rubber');
-  box(1.39, .026, .09, 0, 1.104, 1.65, 'trim', [-.09, 0, 0]);
-  const rearGlass = [[-.702, 1.64, -2.029], [.702, 1.64, -2.029], [.765, 1.122, -2.155], [-.765, 1.122, -2.155]];
-  polygon(rearGlass, 'glass');
-  outline(rearGlass, .023, 'trim');
-  rod([-.45, 1.161, -2.158], [.12, 1.222, -2.144], .011, 'rubber');
-  box(.40, .05, .06, 0, 1.744, -1.904, 'red', [.43, 0, 0]);
-
+  feature = 'green-wraparound-glazing';
+  // A bowed windscreen grid follows the cabin instead of intersecting it.
+  const glassPoint = (u, v) => {
+    const z = 1.155 + v * .638 + (1 - u * u) * .035;
+    return [u * (.747 + v * .082), roofHeight(z) + .040 - .045 * Math.pow(Math.abs(u), 2.8), z + .012];
+  };
+  curvedPanel(glassPoint, 28, 16, 'glass');
+  for (const v of [0, 1]) outline(Array.from({ length: 21 }, (_, i) => glassPoint(i / 10 - 1, v)), .018, 'trim', false);
+  for (const u of [-1, 1]) outline(Array.from({ length: 9 }, (_, i) => glassPoint(u, i / 8)), .021, 'trim', false);
   for (const side of [-1, 1]) {
-    // Windows follow the taper of the cabin; painted posts separate each pane.
-    const sideX = y => side * (.803 - Math.max(0, y - 1.06) * .097);
-    const sidePolygon = coords => coords.map(([z, y]) => [sideX(y), y, z]);
-    const panes = [
-      [[-1.965, 1.112], [-1.842, 1.635], [-1.225, 1.707], [-1.225, 1.112]],
-      [[-1.135, 1.112], [-1.135, 1.709], [-.155, 1.710], [-.155, 1.112]],
-      [[-.065, 1.112], [-.065, 1.711], [1.076, 1.663], [1.484, 1.112]],
-    ];
-    for (const pane of panes) {
-      const points = sidePolygon(pane);
-      polygon(points, 'glass');
-      outline(points, .017, 'trim');
-    }
-    rod([sideX(1.66), 1.66, .965], [sideX(1.12), 1.12, .965], .011, 'trim');
-    // Door boundaries, pressed body crease, sill and sliding-door runner.
-    outline([[side * .813, 1.045, -.12], [side * .822, .57, -.12], [side * .819, .535, .79], [side * .809, .93, 1.00]], .006, 'seam', false);
-    outline([[side * .813, 1.048, -1.20], [side * .822, .57, -1.20], [side * .822, .535, -.22]], .006, 'seam', false);
-    rod([side * .819, 1.025, -1.97], [side * .819, 1.025, 1.61], .010, 'highlight');
-    box(.024, .047, 1.91, side * .827, .70, -.045, 'trim');
-    box(.035, .073, 1.72, side * .826, .43, .01, 'paint');
-    box(.018, .018, .79, side * .822, .905, -1.38, 'trim');
-    for (const z of [.105, -.925]) {
-      box(.015, .040, .16, side * .827, .994, z, 'trim');
-      rod([side * .852, 1.009, z - .064], [side * .852, 1.009, z + .064], .012, 'chrome');
-    }
-    // Mirrors have a separate black mounting arm and a silver outer shell.
-    rod([side * .808, 1.154, 1.12], [side * .933, 1.16, 1.13], .031, 'trim');
-    add(new THREE.SphereGeometry(1, 12, 8), 'paint', [side * .968, 1.192, 1.145], [0, side * .16, 0], [.090, .090, .135]);
-    add(new THREE.SphereGeometry(1, 10, 6), 'glass', [side * .968, 1.194, 1.033], [0, side * .16, 0], [.069, .066, .018]);
-
-    for (const z of [-1.34, 1.315]) {
-      // The torus shoulders remain rounded in the elevated reference view.
-      add(new THREE.TorusGeometry(.252, .081, 10, 24), 'rubber', [side * .782, .334, z], [0, Math.PI / 2, 0]);
-      add(new THREE.CylinderGeometry(.255, .255, .125, 24), 'rubber', [side * .79, .334, z], [0, 0, Math.PI / 2]);
-      add(new THREE.CylinderGeometry(.195, .195, .014, 24), 'chrome', [side * .864, .334, z], [0, 0, Math.PI / 2]);
-      add(new THREE.TorusGeometry(.17, .012, 6, 24), 'highlight', [side * .875, .334, z], [0, Math.PI / 2, 0]);
-      add(new THREE.CylinderGeometry(.054, .054, .026, 14), 'chrome', [side * .885, .334, z], [0, 0, Math.PI / 2]);
-      for (let spoke = 0; spoke < 7; spoke++) {
-        const angle = spoke * Math.PI * 2 / 7;
-        add(new THREE.SphereGeometry(1, 6, 4), 'trim', [side * .881, .334 + Math.sin(angle) * .122, z + Math.cos(angle) * .122], [angle, 0, 0], [.005, .035, .023]);
+    rod([side * .59, 1.244, 1.807], [side * .18, 1.302, 1.749], .010, 'trim');
+    rod([side * .50, 1.236, 1.812], [side * .44, 1.284, 1.762], .008, 'trim');
+  }
+  // The rear window must bend around the rounded tail, too. A flat fan
+  // between its top and sill would cut through the metal tailgate at mid-height.
+  const rearPoint = (u, v) => {
+    const y = 1.218 + v * .606;
+    let z = sections[0][0];
+    for (let i = 1; i < 4; i++) {
+      const previous = sections[i - 1], next = sections[i];
+      if (y <= next[1] + .021) {
+        z = THREE.MathUtils.lerp(previous[0], next[0], THREE.MathUtils.clamp((y - previous[1] - .021) / (next[1] - previous[1]), 0, 1));
+        break;
       }
     }
-    // Long stamped roof ribs and drainage edges, visible from the balcony.
-    for (const x of [.30, .47, .61]) {
-      const height = x > .55 ? 1.851 : 1.87;
-      rod([side * x, height - .025, -1.45], [side * x, height, -.8], .008, 'highlight');
-      rod([side * x, height, -.8], [side * x, height - .004, .72], .008, 'highlight');
-      rod([side * x, height - .004, .72], [side * x, height - .025, .90], .008, 'highlight');
+    return [u * (.835 - v * .104), y, z - .034 - .012 * (1 - u * u)];
+  };
+  curvedPanel(rearPoint, 24, 20, 'glass');
+  for (const v of [0, 1]) outline(Array.from({ length: 25 }, (_, i) => rearPoint(i / 12 - 1, v)), .022, 'trim', false);
+  for (const u of [-1, 1]) outline(Array.from({ length: 21 }, (_, i) => rearPoint(u, i / 20)), .022, 'trim', false);
+  rod([-.43, 1.273, -2.501], [.16, 1.343, -2.501], .013, 'trim');
+  box(.082, .045, .04, 0, 1.251, -2.502, 'trim');
+  for (const side of [-1, 1]) {
+    const sideX = y => side * (.894 - Math.max(0, y - 1.17) * .12);
+    const panes = [
+      [[-2.337, 1.237], [-2.252, 1.622], [-2.065, 1.787], [-1.421, 1.797], [-1.421, 1.222]],
+      [[-1.326, 1.222], [-1.326, 1.798], [-.091, 1.798], [-.091, 1.222]],
+      [[.010, 1.222], [.010, 1.798], [.942, 1.779], [1.141, 1.70], [1.617, 1.222]],
+    ];
+    for (const pane of panes) {
+      const points = pane.map(([z, y]) => [sideX(y), y, z]);
+      if (side < 0) points.reverse();
+      polygon(points, 'glass');
+      outline(points, .018, 'trim');
     }
-    rod([side * .715, 1.770, -1.71], [side * .714, 1.794, .89], .011, 'trim');
+    rod([sideX(1.732), 1.732, 1.11], [sideX(1.229), 1.229, 1.11], .013, 'trim');
+    rod([sideX(1.789), 1.789, -.72], [sideX(1.232), 1.232, -.72], .009, 'trim');
   }
 
-  // Low bumpers, inset grille and lights make the short nose read as a van.
-  box(1.57, .18, .15, 0, .515, 2.13, 'trim');
-  box(1.58, .09, .15, 0, .636, 2.133, 'paint');
-  box(.81, .17, .04, 0, .841, 2.15, 'trim');
-  for (const y of [.80, .848, .896]) box(.77, .012, .047, 0, y, 2.176, 'chrome');
+  feature = 'body-trim-and-sliding-door';
   for (const side of [-1, 1]) {
-    box(.350, .183, .034, side * .604, .865, 2.183, 'trim', [0, side * .12, 0]);
-    box(.326, .16, .027, side * .604, .865, 2.205, 'lamp', [0, side * .12, 0]);
-    box(.072, .125, .038, side * .751, .846, 2.184, 'amber', [0, side * .12, 0]);
-    box(.10, .064, .022, side * .587, .511, 2.212, 'lamp');
-    box(.11, .31, .05, side * .725, .925, -2.13, 'red');
-    box(.104, .073, .056, side * .725, .944, -2.134, 'lamp');
-    box(.106, .054, .054, side * .725, 1.045, -2.132, 'amber');
+    const x = side * .907;
+    outline([[x, 1.195, -.025], [x, .566, -.025], [x, .491, .91], [x, .55, 1.05], [x, .92, 1.30]], .006, 'seam', false);
+    rod([x, 1.181, -2.31], [x, 1.181, 1.56], .012, 'highlight');
+    rod([x, .701, -1.05], [x, .701, 1.02], .029, 'trim');
+    rod([x, .705, -2.32], [x, .705, -1.99], .029, 'trim');
+    box(.035, .075, 2.08, side * .906, .46, -.03, 'paint');
+    box(.024, .041, .166, side * .916, 1.092, .20, 'trim');
+    rod([side * .939, 1.109, .14], [side * .939, 1.109, .27], .012, 'chrome');
+    // One passenger-side sliding door (vehicle right = -X).
+    if (side === -1) {
+      outline([[x, 1.19, -1.38], [x, .55, -1.38], [x, .493, -.078]], .006, 'seam', false);
+      rod([x, 1.067, -2.29], [x, 1.067, -.89], .017, 'trim');
+      rod([x - .006, 1.079, -2.27], [x - .006, 1.079, -.93], .006, 'chrome');
+      box(.027, .046, .166, side * .920, 1.124, -1.16, 'trim');
+      rod([side * .944, 1.142, -1.23], [side * .944, 1.142, -1.10], .012, 'chrome');
+    } else {
+      outline([[x, 1.02, -1.80], [x, 1.02, -2.10], [x, .82, -2.10], [x, .82, -1.80]], .005, 'seam');
+    }
   }
-  box(1.60, .165, .155, 0, .506, -2.128, 'trim');
-  box(1.57, .065, .159, 0, .623, -2.128, 'paint');
-  box(.38, .098, .023, 0, .745, -2.175, 'trim');
-  box(.282, .034, .028, 0, .928, -2.143, 'chrome');
-  outline([[-.588, 1.056, -2.131], [-.588, .678, -2.136], [.588, .678, -2.136], [.588, 1.056, -2.131]], .006, 'seam', false);
-  for (const z of [-2.193, 2.217]) {
-    box(.32, .107, .015, 0, .728, z, 'plate');
-    // A blank generic plate avoids inventing an identifiable registration.
-    box(.27, .008, .019, 0, .737, z, 'highlight');
-    box(.21, .005, .019, 0, .71, z, 'highlight');
+  feature = 'silver-door-mirrors';
+  for (const side of [-1, 1]) {
+    rod([side * .873, 1.271, 1.29], [side * 1.00, 1.282, 1.34], .035, 'trim');
+    add(new THREE.SphereGeometry(1, 14, 10), 'paint', [side * 1.015, 1.315, 1.34], [0, side * .18, 0], [.10, .10, .148]);
+    add(new THREE.SphereGeometry(1, 12, 8), 'glass', [side * 1.021, 1.316, 1.213], [0, side * .18, 0], [.073, .074, .019]);
   }
-  for (const [name, geometries] of batches) {
-    const merged = mergeGeometries(geometries, false);
-    const mesh = new THREE.Mesh(merged, materials[name]);
-    mesh.name = `minivan-${name}`;
+  feature = 'four-steel-wheels';
+  for (const side of [-1, 1]) for (const z of [-1.54, 1.54]) {
+    add(new THREE.TorusGeometry(.255, .086, 12, 28), 'rubber', [side * .790, .341, z], [0, Math.PI / 2, 0]);
+    add(new THREE.CylinderGeometry(.266, .266, .168, 28), 'rubber', [side * .795, .341, z], [0, 0, Math.PI / 2]);
+    add(new THREE.CylinderGeometry(.199, .199, .018, 28), 'chrome', [side * .89, .341, z], [0, 0, Math.PI / 2]);
+    add(new THREE.TorusGeometry(.174, .015, 6, 28), 'chrome', [side * .902, .341, z], [0, Math.PI / 2, 0]);
+    add(new THREE.SphereGeometry(1, 12, 8), 'chrome', [side * .911, .341, z], [0, 0, 0], [.028, .069, .069]);
+    for (let hole = 0; hole < 8; hole++) {
+      const a = hole * Math.PI / 4;
+      add(new THREE.SphereGeometry(1, 8, 4), 'trim', [side * .905, .341 + Math.sin(a) * .132, z + Math.cos(a) * .132], [a, 0, 0], [.005, .032, .018]);
+    }
+  }
+
+  feature = 'stamped-roof-ribs';
+  for (const side of [-1, 1]) {
+    for (const x of [.29, .43, .57]) {
+      const points = [-1.96, -1.72, -1.20, .50, .70].map(z => [side * x, roofHeight(z) + .025 - Math.pow(x / .8, 2) * .035, z]);
+      outline(points, .007, 'highlight', false);
+    }
+    outline([[-2.13, 1.86], [-1.93, 1.906], [.66, 1.916], [.98, 1.876]].map(([z, y]) => [side * .792, y, z]), .011, 'trim', false);
+  }
+
+  feature = 'classic-shuttle-front';
+  // Original rounded horizontal lights and narrow two-bar grille, distinct
+  // from the bigger grille and twin round optics of the later 祥和.
+  const frontZ = x => 2.486 - .19 * Math.pow(Math.abs(x) / .91, 2);
+  for (const side of [-1, 1]) {
+    const lampContour = [[.435, .927], [.455, 1.014], [.673, 1.038], [.858, 1.087], [.89, 1.041], [.893, .948], [.827, .872], [.504, .867]];
+    const points = lampContour.map(([x, y]) => [x * side, y, frontZ(x) + .012]);
+    if (side < 0) points.reverse();
+    polygon(points, 'lamp');
+    outline(points, .012, 'trim');
+    for (const x of [.55, .714]) add(new THREE.SphereGeometry(1, 12, 8), 'chrome', [x * side, .948, frontZ(x) + .025], [0, side * .12, 0], [.069, .061, .02]);
+    polygon([[side * .837, .89, frontZ(.837) + .028], [side * .889, .953, frontZ(.889) + .028], [side * .884, 1.025, frontZ(.884) + .028], [side * .846, 1.04, frontZ(.846) + .028]], 'amber');
+    add(new THREE.SphereGeometry(1, 12, 8), 'trim', [side * .65, .50, 2.446], [0, side * .13, 0], [.094, .064, .034]);
+    add(new THREE.SphereGeometry(1, 12, 8), 'lamp', [side * .65, .502, 2.472], [0, side * .13, 0], [.065, .043, .015]);
+  }
+  const grille = [[-.421, 1.007, 2.459], [.421, 1.007, 2.459], [.407, .842, 2.489], [-.407, .842, 2.489]];
+  polygon([...grille].reverse(), 'trim');
+  outline(grille, .015, 'chrome');
+  for (const y of [.896, .965]) box(.783, .015, .017, 0, y, 2.499, 'chrome');
+  add(new THREE.SphereGeometry(1, 24, 10), 'paint', [0, .639, 2.327], [0, 0, 0], [.898, .125, .191]);
+  box(.895, .075, .038, 0, .488, 2.493, 'trim');
+  rod([-.795, .761, 2.393], [0, .772, 2.488], .024, 'trim');
+  rod([0, .772, 2.488], [.795, .761, 2.393], .024, 'trim');
+  for (const side of [-1, 1]) outline([[side * .76, 1.175, 1.83], [side * .695, 1.124, 2.02], [side * .58, 1.083, 2.31]], .005, 'seam', false);
+  box(.345, .115, .012, 0, .647, 2.520, 'plate');
+
+  feature = 'rear-tailgate-and-lamps';
+  box(.46, .051, .048, 0, 1.848, -2.254, 'red', [.64, 0, 0]);
+  for (const side of [-1, 1]) {
+    const tail = [[side * .714, 1.156, -2.482], [side * .871, 1.153, -2.43], [side * .879, .816, -2.436], [side * .718, .811, -2.485]];
+    polygon(tail, 'red');
+    outline(tail, .010, 'trim');
+    polygon([[side * .72, 1.032, -2.495], [side * .875, 1.03, -2.448], [side * .875, .966, -2.448], [side * .72, .966, -2.495]], 'lamp');
+    polygon([[side * .72, 1.142, -2.495], [side * .873, 1.14, -2.445], [side * .875, 1.078, -2.447], [side * .72, 1.078, -2.495]], 'amber');
+  }
+  add(new THREE.SphereGeometry(1, 24, 10), 'paint', [0, .565, -2.333], [0, 0, 0], [.9, .126, .176]);
+  box(1.66, .063, .162, 0, .624, -2.397, 'trim');
+  box(.416, .147, .026, 0, .84, -2.489, 'trim');
+  box(.347, .111, .013, 0, .838, -2.51, 'plate');
+  box(.278, .042, .034, 0, 1.071, -2.481, 'chrome');
+  outline([[-.645, 1.167, -2.479], [-.654, .707, -2.476], [.654, .707, -2.476], [.645, 1.167, -2.479]], .006, 'seam', false);
+
+  feature = 'jac-and-refine-badging';
+  // Silver marque and lettering are real geometry, so exported GLBs retain it
+  // without external fonts, labels or raster logo dependencies.
+  outline(Array.from({ length: 32 }, (_, i) => {
+    const a = i / 32 * Math.PI * 2;
+    return [Math.cos(a) * .102, .93 + Math.sin(a) * .055, 2.519];
+  }), .010, 'chrome');
+  const letters = {
+    J: [[[.05, .05], [.05, -.023], [.034, -.042], [.006, -.042], [-.006, -.025]]],
+    A: [[[-.035, -.045], [0, .05], [.035, -.045]], [[-.021, -.008], [.021, -.008]]],
+    C: [[[.030, .035], [.012, .05], [-.021, .05], [-.039, .024], [-.039, -.025], [-.018, -.044], [.017, -.044], [.033, -.026]]],
+    R: [[[-.03, -.046], [-.03, .046], [.018, .046], [.035, .025], [.031, .003], [-.03, .003]], [[0, .003], [.04, -.046]]],
+    E: [[[.035, .046], [-.03, .046], [-.03, -.046], [.035, -.046]], [[-.03, 0], [.025, 0]]],
+    F: [[[-.03, -.046], [-.03, .046], [.035, .046]], [[-.03, .001], [.022, .001]]],
+    I: [[[0, -.046], [0, .046]]],
+    N: [[[-.03, -.046], [-.03, .046], [.03, -.046], [.03, .046]]],
+  };
+  function lettering(text, x, y, z, scale, rear = false) {
+    for (let i = 0; i < text.length; i++) for (const stroke of letters[text[i]] || []) {
+      outline(stroke.map(([px, py]) => [(x + i * .09 * scale + px * scale) * (rear ? -1 : 1), y + py * scale, z]), .0045 * scale, 'chrome', false);
+    }
+  }
+  lettering('JAC', -.06, .93, 2.53, .60);
+  lettering('JAC', -.56, 1.127, -2.495, .65, true);
+  lettering('REFINE', .22, 1.127, -2.495, .62, true);
+
+  // Merge by feature and material; the named parts remain inspectable.
+  const groups = new Map();
+  for (const [key, geometries] of batches) {
+    const [part, material] = key.split(':');
+    if (!groups.has(part)) {
+      const group = new THREE.Group();
+      group.name = part;
+      groups.set(part, group);
+      vehicle.add(group);
+    }
+    const mesh = new THREE.Mesh(mergeGeometries(geometries, false), materials[material]);
+    mesh.name = `minivan-${part}-${material}`;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    vehicle.add(mesh);
+    groups.get(part).add(mesh);
     for (const geometry of geometries) geometry.dispose();
   }
-  vehicle.userData = { kind: 'silver-minivan', lengthMetres: 4.45, widthMetres: 1.75, heightMetres: 1.88, frontDirection: '+Z' };
+  vehicle.userData = {
+    kind: 'silver-minivan', vehicleMake: 'JAC', vehicleModel: '瑞风穿梭',
+    bodyStyle: 'classic long-wheelbase MPV', referenceVariant: '2011–2012 穿梭长轴版',
+    lengthMetres: 5.035, widthMetres: 1.82, heightMetres: 1.97, wheelbaseMetres: 3.08,
+    dimensions: { length: 5.035, bodyWidth: 1.82, height: 1.97, wheelbase: 3.08 },
+    frontDirection: '+Z', slidingDoorSide: '-X', features: [...groups.keys()],
+  };
   return vehicle;
 }
