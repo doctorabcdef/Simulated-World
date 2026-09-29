@@ -4,6 +4,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { createHouse } from './house.js';
 import { createLandscape } from './landscape.js';
+import { createVehicle } from './vehicle.js';
 import './style.css';
 
 const $ = id => document.getElementById(id);
@@ -55,7 +56,7 @@ const sunlight = new THREE.DirectionalLight('#fff4df', 3.0);
 sunlight.position.set(-12, 24, 17);
 sunlight.castShadow = true;
 sunlight.shadow.mapSize.set(2048, 2048);
-Object.assign(sunlight.shadow.camera, { left: -24, right: 24, top: 23, bottom: -23, near: 1, far: 85 });
+Object.assign(sunlight.shadow.camera, { left: -32, right: 32, top: 34, bottom: -34, near: .5, far: 120 });
 sunlight.shadow.bias = -.00018;
 sunlight.shadow.normalBias = .024;
 sunlight.shadow.radius = 2;
@@ -80,6 +81,9 @@ scene.add(house);
 $('loading-progress').textContent = '70%';
 await new Promise(resolve => requestAnimationFrame(resolve));
 const landscape = createLandscape(THREE);
+const vehicle = createVehicle(THREE);
+vehicle.position.set(-3.2, .047, 14.5);
+landscape.add(vehicle);
 scene.add(landscape);
 // A neutral ground remains available when the surrounding landscape is hidden.
 const studyGround = new THREE.Mesh(new THREE.PlaneGeometry(220, 220), new THREE.MeshStandardMaterial({ color: '#dbded3', roughness: 1 }));
@@ -91,16 +95,17 @@ scene.add(studyGround);
 
 const views = {
   reference: { position: [15.6, 14.5, 27.4], target: [0, 4.7, .6], fov: 36 },
-  orbit: { position: [22, 14.4, 29], target: [0, 4.3, .3], fov: 41 },
+  orbit: { position: [26, 21, 39], target: [0, 3.2, 10], fov: 46 },
   front: { position: [0, 7.7, 32], target: [0, 4.8, 0], fov: 39 },
-  top: { position: [15, 32, 17], target: [0, 2, 0], fov: 42 },
+  courtyard: { position: [.1, 11.8, 5.8], target: [0, .45, 20.5], fov: 54, mobileScale: 1.32 },
+  top: { position: [16, 39, 23], target: [0, 1, 12], fov: 48, mobileScale: 1.8 },
 };
 let tween = null, currentView = 'reference', toastTimer, lastFrame = 0;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 function cameraPosition(view) {
   const position = new THREE.Vector3(...view.position);
   const target = new THREE.Vector3(...view.target);
-  const factor = innerWidth < 600 ? 2.05 : innerWidth < 1000 ? 1.18 : 1;
+  const factor = innerWidth < 600 ? (view.mobileScale || 2.05) : innerWidth < 1000 ? 1.18 : 1;
   return position.sub(target).multiplyScalar(factor).add(target);
 }
 function setView(name, immediate = false) {
@@ -133,6 +138,21 @@ function setReference(visible) {
   $('reference-panel').hidden = !visible;
   $('reference-toggle').classList.toggle('is-active', visible);
   $('reference-toggle').setAttribute('aria-pressed', String(visible));
+}
+const referencePhotos = [
+  { path: 'reference.jpg', title: '建筑参考', alt: '白墙蓝瓦住宅及环绕阳台' },
+  { path: 'references/courtyard.jpg', title: '门前院落', alt: '门前混凝土地坪、白色修补裂缝与银色车辆' },
+  { path: 'references/boundary.jpg', title: '围墙与植被', alt: '红砖围墙、绿色垃圾桶、覆盖料堆与树木' },
+  { path: 'references/lane.jpg', title: '村道与邻屋', alt: '树木间的村道、电杆、架空电线与邻家瓦房' },
+];
+let selectedReference = 0;
+function selectReference(index) {
+  selectedReference = index;
+  const photo = referencePhotos[index];
+  $('reference-image').src = new URL(photo.path, new URL(import.meta.env.BASE_URL, document.baseURI)).href;
+  $('reference-image').alt = photo.alt;
+  $('reference-panel').classList.toggle('portrait-reference', index > 0);
+  document.querySelectorAll('[data-reference]').forEach(button => button.setAttribute('aria-pressed', String(Number(button.dataset.reference) === index)));
 }
 function setSettings(visible) {
   $('settings-panel').hidden = !visible;
@@ -172,6 +192,15 @@ document.querySelectorAll('[data-view]').forEach(button => button.addEventListen
 $('auto-rotate').addEventListener('click', () => { tween = null; setAutoRotate(!controls.autoRotate); });
 $('reference-toggle').addEventListener('click', () => setReference($('reference-panel').hidden));
 $('reference-close').addEventListener('click', () => setReference(false));
+document.querySelectorAll('[data-reference]').forEach(button => button.addEventListener('click', () => selectReference(Number(button.dataset.reference))));
+$('reference-expand').addEventListener('click', () => {
+  $('reference-dialog-image').src = $('reference-image').src;
+  $('reference-dialog-image').alt = referencePhotos[selectedReference].alt;
+  $('reference-dialog-title').textContent = referencePhotos[selectedReference].title;
+  $('reference-dialog').showModal();
+});
+$('reference-dialog-close').addEventListener('click', () => $('reference-dialog').close());
+$('reference-dialog').addEventListener('click', event => { if (event.target === $('reference-dialog')) $('reference-dialog').close(); });
 $('settings-toggle').addEventListener('click', () => setSettings($('settings-panel').hidden));
 $('show-landscape').addEventListener('change', event => setLandscape(event.target.checked));
 $('wireframe').addEventListener('change', event => setWireframe(event.target.checked));
@@ -255,4 +284,4 @@ $('loading-progress').textContent = '100%';
 requestAnimationFrame(animate);
 setTimeout(() => $('loading').classList.add('is-hidden'), 180);
 // Inspectable state is useful for validating the scene without modifying its UI.
-window.__scene = { scene, camera, renderer, house, landscape, controls, setView, ready: true };
+window.__scene = { scene, camera, renderer, house, landscape, vehicle, controls, setView, ready: true };

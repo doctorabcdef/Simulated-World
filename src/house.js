@@ -5,6 +5,14 @@ import { createRoof } from './roof.js';
 export function createHouse() {
   const house = new THREE.Group();
   house.name = '山居 · 建筑复刻';
+  // Each storey has one window module, shared by every elevation.
+  const windowSizes = {
+    1: { width: 1.70, height: 1.85 },
+    2: { width: 1.90, height: 2.04 },
+    3: { width: 1.90, height: .86 },
+  };
+  const windowSchedule = [];
+  house.userData.windowSchedule = windowSchedule;
   const batches = new Map();
   const boxGeo = new THREE.BoxGeometry(1, 1, 1);
   const rodGeo = new THREE.CylinderGeometry(1, 1, 1, 10);
@@ -100,7 +108,7 @@ export function createHouse() {
   box(.25, 3.0, 8.7, 5.88, 4.9, 0, mat.concrete);
   box(.28, 3.0, 3.2, 5.90, 4.9, 2.75);
   box(12, 3.0, .23, 0, 4.9, -4.28, mat.concrete);
-  // Ground floor includes the open storage bay visible in the photograph.
+  // Ground floor structural opening, now fitted with the owner's roll-up door.
   box(12, 3, .25, 0, 1.6, -4.28, mat.concrete);
   box(.27, 3, 8.8, -5.88, 1.6, 0);
   box(.27, 3, 8.8, 5.88, 1.6, 0, mat.concrete);
@@ -114,26 +122,75 @@ export function createHouse() {
   box(.15, 2.7, 5.5, -1.69, 1.48, 1.5, mat.interior);
   box(.15, 2.7, 5.5, 3.10, 1.48, 1.5, mat.interior);
 
-  function frontWindow(cx, cy, width, height, z = 4.432, divisions = 2, material = mat.glass) {
-    box(width + .15, height + .15, .055, cx, cy, z - .022, mat.concrete);
-    box(width, height, .065, cx, cy, z + .02, mat.recess);
+  // A closed galvanized curtain: individual folded slats, deep guides, hood,
+  // bottom rail and a recessed pull handle distinguish it from a glazed door.
+  const shutter = new THREE.Group();
+  shutter.name = 'ground-floor-roller-shutter';
+  shutter.position.set(.74, .15, 4.43);
+  const shutterWidth = 4.62, shutterHeight = 2.62, slatCount = 39;
+  shutter.userData = { width: shutterWidth, height: shutterHeight, slatCount, state: 'closed', floor: 1 };
+  const shutterMetal = new THREE.MeshStandardMaterial({ color: '#aab3b3', metalness: .66, roughness: .43 });
+  const shutterEdge = new THREE.MeshStandardMaterial({ color: '#d0d7d5', metalness: .72, roughness: .35 });
+  const shutterSeam = new THREE.MeshStandardMaterial({ color: '#737f7e', metalness: .48, roughness: .55 });
+  function shutterBox(name, size, position, material) {
+    const mesh = new THREE.Mesh(boxGeo, material);
+    mesh.name = name; mesh.scale.set(...size); mesh.position.set(...position);
+    mesh.castShadow = mesh.receiveShadow = true; shutter.add(mesh);
+    return mesh;
+  }
+  shutterBox('door-recess', [shutterWidth + .1, shutterHeight + .04, .065], [0, shutterHeight / 2, -.055], mat.recess);
+  const slatPitch = shutterHeight / slatCount;
+  for (const [name, height, depth, offsetY, offsetZ, material] of [
+    ['galvanized-slats', slatPitch - .004, .052, 0, .005, shutterMetal],
+    ['folded-slat-lips', .011, .070, -slatPitch / 2 + .009, .013, shutterEdge],
+    ['horizontal-slat-seams', .005, .035, slatPitch / 2 - .0025, -.002, shutterSeam],
+  ]) {
+    const slats = new THREE.InstancedMesh(boxGeo, material, slatCount);
+    slats.name = name;
+    for (let i = 0; i < slatCount; i++) {
+      dummy.position.set(0, (i + .5) * slatPitch + offsetY, offsetZ);
+      dummy.rotation.set(0, 0, 0); dummy.scale.set(shutterWidth, height, depth); dummy.updateMatrix();
+      slats.setMatrixAt(i, dummy.matrix);
+    }
+    slats.castShadow = slats.receiveShadow = true; slats.computeBoundingSphere(); shutter.add(slats);
+  }
+  for (const side of [-1, 1]) {
+    const x = side * (shutterWidth / 2 + .055);
+    shutterBox('vertical-guide-track', [.11, shutterHeight + .08, .16], [x, shutterHeight / 2, .03], shutterEdge);
+    shutterBox('guide-track-channel', [.021, shutterHeight, .025], [x - side * .035, shutterHeight / 2, .12], shutterSeam);
+  }
+  shutterBox('rolled-curtain-hood', [shutterWidth + .28, .25, .31], [0, shutterHeight + .095, .045], shutterMetal);
+  shutterBox('hood-drip-edge', [shutterWidth + .30, .026, .34], [0, shutterHeight - .022, .062], shutterEdge);
+  shutterBox('weighted-bottom-bar', [shutterWidth, .075, .10], [0, .04, .035], shutterEdge);
+  shutterBox('pull-handle-recess', [.32, .11, .025], [0, .30, .048], shutterSeam);
+  shutterBox('pull-handle', [.25, .027, .036], [0, .30, .093], shutterEdge);
+  for (const x of [-.125, .125]) shutterBox('handle-mount', [.025, .08, .05], [x, .30, .075], shutterEdge);
+  shutterBox('lock-plate', [.045, .07, .018], [.29, .29, .046], mat.dark);
+  house.add(shutter);
+
+  function frontWindow(floor, cx, cy, z = 4.432, facade = 'front', divisions = 2, material = mat.glass) {
+    const { width, height } = windowSizes[floor];
+    const facing = facade === 'rear' ? -1 : 1;
+    windowSchedule.push({ floor, facade, width, height, center: [cx, cy, z] });
+    box(width + .15, height + .15, .055, cx, cy, z - facing * .022, mat.concrete);
+    box(width, height, .065, cx, cy, z + facing * .02, mat.recess);
     const paneW = (width - .13) / divisions;
     for (let i = 0; i < divisions; i++) {
       const px = cx - width / 2 + .065 + paneW * (i + .5);
-      box(paneW - .045, height - .15, .045, px, cy, z + .06, i % 2 ? mat.glassLight : material);
-      box(.048, height, .075, px - paneW / 2, cy, z + .1, mat.dark);
-      box(paneW - .04, .035, .05, px, cy - height * .25, z + .105, mat.dark);
+      box(paneW - .045, height - .15, .045, px, cy, z + facing * .06, i % 2 ? mat.glassLight : material);
+      box(.048, height, .075, px - paneW / 2, cy, z + facing * .1, mat.dark);
+      box(paneW - .04, .035, .05, px, cy - height * .25, z + facing * .105, mat.dark);
     }
-    for (const dx of [-width / 2, width / 2]) box(.065, height + .04, .12, cx + dx, cy, z + .07, mat.dark);
-    for (const dy of [-height / 2, height / 2]) box(width + .07, .065, .12, cx, cy + dy, z + .07, mat.dark);
-    box(width + .22, .075, .24, cx, cy - height / 2 - .07, z + .05, mat.concrete);
+    for (const dx of [-width / 2, width / 2]) box(.065, height + .04, .12, cx + dx, cy, z + facing * .07, mat.dark);
+    for (const dy of [-height / 2, height / 2]) box(width + .07, .065, .12, cx, cy + dy, z + facing * .07, mat.dark);
+    box(width + .22, .075, .24, cx, cy - height / 2 - .07, z + facing * .05, mat.concrete);
   }
-  frontWindow(-4.62, 4.94, 1.35, 2.05);
-  frontWindow(2.35, 4.91, 2.72, 2.04);
+  frontWindow(2, -4.62, 4.94);
+  frontWindow(2, 2.35, 4.94);
   // Narrow top lights and sliding double leaf window frames.
-  box(2.72, .055, .12, 2.35, 5.58, 4.53, mat.dark);
-  frontWindow(-4.23, 1.65, 2.08, 1.85);
-  frontWindow(4.75, 1.63, 1.37, 2.18);
+  for (const x of [-4.62, 2.35]) box(windowSizes[2].width, .055, .12, x, 5.58, 4.53, mat.dark);
+  frontWindow(1, -4.23, 1.65);
+  frontWindow(1, 4.75, 1.65);
 
   function inscription(text, w, h) {
     const c = document.createElement('canvas'); c.width = w; c.height = h;
@@ -169,7 +226,7 @@ export function createHouse() {
   box(12, 1.52, .22, 0, 7.585, -4.28, mat.concrete);
   box(.25, 1.37, 8.6, 5.88, 7.51, 0, mat.concrete);
   box(.25, 1.37, 8.6, -5.88, 7.51, 0, mat.concrete);
-  for (const [x, width] of [[-4.74, 1.25], [-1.72, 1.9], [2.43, 2.50]]) frontWindow(x, 7.56, width, .86, 4.41);
+  for (const x of [-4.74, -1.72, 2.43]) frontWindow(3, x, 7.56, 4.41);
   // Solid triangular gable ends.
   const gable = new THREE.Shape(); gable.moveTo(-4.3, 8.10); gable.lineTo(4.3, 8.10); gable.lineTo(4.3, 8.34); gable.lineTo(0, 10.15); gable.lineTo(-4.3, 8.34); gable.closePath();
   const gableGeo = new THREE.ShapeGeometry(gable);
@@ -180,8 +237,10 @@ export function createHouse() {
   }
   house.add(createRoof(THREE));
 
-  // Side windows, the open balcony door and a small attic access.
-  function sideWindow(z, y, w, h, x = 6.05) {
+  // Side windows use the same storey modules as the front and rear.
+  function sideWindow(floor, z, y, x = 6.05) {
+    const { width: w, height: h } = windowSizes[floor];
+    windowSchedule.push({ floor, facade: 'right', width: w, height: h, center: [x, y, z] });
     box(.07, h + .15, w + .15, x, y, z, mat.concrete);
     box(.10, h, w, x + .04, y, z, mat.recess);
     box(.055, h - .14, w - .14, x + .10, y, z, mat.glass);
@@ -189,10 +248,10 @@ export function createHouse() {
     for (const yy of [y - h / 2, y + h / 2]) box(.12, .07, w + .08, x + .11, yy, z, mat.dark);
     box(.21, .07, w + .24, x + .08, y - h / 2 - .07, z, mat.concrete);
   }
-  sideWindow(-1.2, 5.0, 1.32, 1.75);
-  sideWindow(-3.45, 5.0, .9, 1.75);
-  sideWindow(-2.0, 1.65, 1.4, 1.85);
-  sideWindow(-1.5, 7.48, .78, 1.12);
+  sideWindow(2, -.8, 4.94);
+  sideWindow(2, -3.0, 4.94);
+  sideWindow(1, -2.0, 1.65);
+  sideWindow(3, -1.5, 7.56);
   box(.08, 2.48, .96, 6.075, 4.64, 2.95, mat.recess);
   box(.14, 2.58, .055, 6.12, 4.65, 3.44, mat.dark);
   box(.14, 2.58, .055, 6.12, 4.65, 2.45, mat.dark);
@@ -256,14 +315,10 @@ export function createHouse() {
   box(.58, .018, .36, 6.56, 3.37, 3.19, mat.red, [0, -.3, 0]);
   for (let i = 0; i < 7; i++) box(.12, 2.5 + random() * .45, .065, 6.30 + random() * .27, 4.55, -.3 + random() * .7, mat.wood, [random() * .13, 0, -.14]);
   for (let i = 0; i < 8; i++) box(.11, 2.1 + random() * .5, .065, -1.23 + random() * .6, 1.32, 3.82, mat.wood, [0, 0, .2]);
-  rod([6.15, 3.38, -3.85], [6.15, 6.85, -3.85], .027, mat.concrete);
-  rod([6.15, 6.85, -3.85], [5.99, 6.97, -3.85], .027, mat.concrete);
+  rod([6.15, 3.38, -4.15], [6.15, 6.85, -4.15], .027, mat.concrete);
+  rod([6.15, 6.85, -4.15], [5.99, 6.97, -4.15], .027, mat.concrete);
   // Rear elevations are inferred because only two sides appear in the source.
-  for (const x of [-3.8, 0, 3.8]) {
-    box(1.75, 1.6, .075, x, 4.85, -4.44, mat.dark);
-    box(1.61, 1.46, .08, x, 4.85, -4.485, mat.glass);
-    box(.05, 1.6, .09, x, 4.85, -4.5, mat.dark);
-  }
+  for (const x of [-3.8, 0, 3.8]) frontWindow(2, x, 4.94, -4.432, 'rear');
   for (const { geometry, material, matrices } of batches.values()) {
     const mesh = new THREE.InstancedMesh(geometry, material, matrices.length);
     matrices.forEach((matrix, i) => mesh.setMatrixAt(i, matrix));

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#e8e9df" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <meta name="description" content="从一张照片，重访山间的家。可交互的乡村住宅三维场景。" />
+    <meta name="description" content="依据实景照片重建的山间住宅与门前院落，可交互的三维场景。" />
     <title>山居 · 空间复刻</title>
   </head>
   <body>
@@ -34,13 +34,24 @@
 
     <aside class="reference-card" id="reference-panel" aria-label="原始参考影像">
       <div class="reference-card-header"><span><span class="reference-dot"></span>原始影像</span><button class="plain-icon-button" id="reference-close" type="button" aria-label="关闭参考图" title="关闭参考图"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
-      <div class="reference-image-wrap"><img src="/reference.jpg" alt="山林间的白墙蓝瓦住宅原始照片" /></div>
-      <div class="reference-card-footer"><span>单张照片 <i>·</i> 空间重建</span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8V4h4m8 0h4v4M4 16v4h4m8 0h4v-4"/></svg></div>
+      <button class="reference-image-wrap" id="reference-expand" type="button" aria-label="放大当前参考照片"><img id="reference-image" src="/reference.jpg" alt="山林间的白墙蓝瓦住宅原始照片" /></button>
+      <div class="reference-tabs" role="group" aria-label="选择参考照片">
+        <button type="button" data-reference="0" aria-pressed="true">建筑</button>
+        <button type="button" data-reference="1" aria-pressed="false">门前</button>
+        <button type="button" data-reference="2" aria-pressed="false">围墙</button>
+        <button type="button" data-reference="3" aria-pressed="false">村道</button>
+      </div>
+      <div class="reference-card-footer"><span>4 张实景 <i>·</i> 点击照片放大</span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8V4h4m8 0h4v4M4 16v4h4m8 0h4v-4"/></svg></div>
     </aside>
+
+    <dialog id="reference-dialog" aria-labelledby="reference-dialog-title">
+      <div class="photo-dialog-header"><h2 id="reference-dialog-title">建筑参考</h2><button class="plain-icon-button" id="reference-dialog-close" type="button" aria-label="关闭放大照片"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+      <img id="reference-dialog-image" alt="放大的实景参考照片" />
+    </dialog>
 
     <aside class="settings-panel" id="settings-panel" hidden aria-label="场景设置">
       <div class="settings-heading"><h2>场景设置</h2><span>SCENE</span></div>
-      <label class="toggle-row" for="show-landscape"><span>周边山林</span><input id="show-landscape" type="checkbox" checked /><span class="switch" aria-hidden="true"></span></label>
+      <label class="toggle-row" for="show-landscape"><span>院落与周边</span><input id="show-landscape" type="checkbox" checked /><span class="switch" aria-hidden="true"></span></label>
       <label class="toggle-row" for="wireframe"><span>线框模式</span><input id="wireframe" type="checkbox" /><span class="switch" aria-hidden="true"></span></label>
       <div class="light-control"><label for="light-time">光照时刻</label><div class="range-row"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 19h18M5 15h14M7 11a5 5 0 0 1 10 0M12 2v2M3 6l2 2m16-2-2 2"/></svg><input id="light-time" type="range" min="0" max="1" step="0.01" value="0.62" aria-label="调整光照时刻" /><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></div></div>
       <button class="reset-button" id="reset-scene" type="button"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></svg>重置场景</button>
@@ -57,6 +68,7 @@
         <button class="view-button is-active" data-view="reference" type="button" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 8V4h5m8 0h5v4M3 16v4h5m8 0h5v-4"/><rect x="7" y="8" width="10" height="8" rx="1"/></svg><span>原图视角</span></button>
         <button class="view-button" data-view="orbit" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m12 3 7 4v9l-7 4-7-4V7l7-4Zm0 8v9M5 7l7 4 7-4M2 13c-3 5 16 11 20 3"/></svg><span>全景环绕</span></button>
         <button class="view-button" data-view="front" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8"/></svg><span>正立面</span></button>
+        <button class="view-button" data-view="courtyard" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 21 3-18m7 18L14 3M3 15h18M5 9h14M12 18v3m0-8v2m0-7v2"/></svg><span>门前院落</span></button>
         <button class="view-button" data-view="top" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m12 3 10 6-10 6L2 9l10-6Zm-9 11 9 5 9-5m-18 5 9 5 9-5" transform="translate(0 -2)"/></svg><span>鸟瞰</span></button>
       </nav>
       <div class="scene-note"><span class="live-dot"></span>实时 3D 场景</div>

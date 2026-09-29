@@ -14,3 +14,17 @@
 .interaction-hints,.scene-note{padding:9px 12px;background:rgba(250,251,246,.88);border:1px solid #ffffff8c;border-radius:8px;color:#617359;backdrop-filter:blur(12px);box-shadow:0 2px 12px #1f321011}
 .interaction-hints i{color:#95a18d}
 @media(max-width:600px){.identity{padding:6px 10px 6px 6px;border-radius:12px}.topbar{align-items:center}.interaction-hints{left:50%;transform:translateX(-50%);width:max-content;padding:7px 11px;border-radius:7px}}
+/* Four reference photographs and the view looking out from the balcony. */
+.reference-image-wrap{display:block;padding:0;width:calc(100% - 18px);cursor:zoom-in}
+.reference-tabs{display:flex;gap:3px;margin:9px 10px 0}
+.reference-tabs button{flex:1;padding:6px 2px;font-size:9px;background:transparent;border-radius:5px;color:#73806c}
+.reference-tabs button:hover{background:#e8eee2}
+.reference-tabs button[aria-pressed=true]{background:#e0e8d9;color:#294c38}
+.portrait-reference .reference-image-wrap img{aspect-ratio:4/3;object-fit:contain;background:#dbe0d4}
+#reference-dialog{padding:12px;border:1px solid #ffffffaa;border-radius:14px;background:#f4f5ef;max-width:90vw;max-height:92vh;box-shadow:0 16px 70px #0f231955}
+#reference-dialog::backdrop{background:#13231ac9;backdrop-filter:blur(5px)}
+.photo-dialog-header{display:flex;align-items:center;justify-content:space-between;padding:0 0 9px;gap:30px}
+.photo-dialog-header h2{font-size:12px;font-weight:500;margin:0;letter-spacing:1px}
+#reference-dialog-image{display:block;max-width:calc(90vw - 28px);max-height:calc(92vh - 68px);object-fit:contain;border-radius:5px}
+@media(max-width:900px){.view-button{padding:11px 12px}}
+@media(max-width:600px){.reference-image-wrap{width:calc(100% - 12px)}.reference-tabs{margin:6px 6px 0;gap:1px}.reference-tabs button{font-size:8px;padding:5px 1px}.view-button{flex-direction:column;gap:5px;padding:8px 2px;font-size:8px}.view-switcher{max-width:420px}.view-button svg{width:14px;height:14px}.reference-card-footer{padding-top:7px}}

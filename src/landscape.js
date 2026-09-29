@@ -1,4 +1,5 @@
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { createForecourt } from './forecourt.js';
 
 // The clearing continues into a wooded slope; all foliage is drawn in batches.
 export function createLandscape(THREE) {
@@ -40,6 +41,8 @@ export function createLandscape(THREE) {
     const distance = Math.max(Math.abs(x) - 9, Math.abs(z - 2) - 12, 0);
     let y = -0.15 - Math.min(2.4, distance * 0.07);
     y += Math.min(distance * 0.04, 1.4) * (Math.sin(x * 0.19) * Math.cos(z * 0.14));
+    const villageClearing = Math.max(0, Math.min(1, (z - 3) / 6, (59 - z) / 6, (27 - Math.abs(x)) / 4));
+    y += (-.15 - y) * villageClearing;
     terrainPositions.setY(i, y);
   }
   terrainGeo.computeVertexNormals();
@@ -51,17 +54,12 @@ export function createLandscape(THREE) {
   const cementMap = noiseTexture([166, 164, 150], 15, 512);
   cementMap.repeat.set(5, 6);
   const cementMaterial = new THREE.MeshStandardMaterial({ color: 0xc9c8bb, map: cementMap, roughness: 0.97, bumpMap: cementMap, bumpScale: 0.025 });
-  const courtyard = new THREE.Mesh(new THREE.BoxGeometry(18.6, 0.14, 20.5), cementMaterial);
-  courtyard.position.set(0.5, -0.03, 3.2);
+  const courtyard = new THREE.Mesh(new THREE.BoxGeometry(18.6, 0.14, 11.4), cementMaterial);
+  courtyard.name = 'house-side-concrete-apron';
+  courtyard.position.set(0.5, -0.03, -1.35);
   courtyard.receiveShadow = true;
   group.add(courtyard);
-  const seamMaterial = new THREE.MeshStandardMaterial({ color: 0x858576, roughness: 1 });
-  const seamSpecs = [[0.5, 0.041, 7.7, 18.3, 0.006, 0.013], [-4, 0.041, 7.6, 0.014, 0.006, 11.4], [5.3, 0.041, 9, 0.014, 0.006, 8.3]];
-  for (const [x, y, z, w, h, d] of seamSpecs) {
-    const seam = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), seamMaterial);
-    seam.position.set(x, y, z);
-    group.add(seam);
-  }
+  group.add(createForecourt(THREE));
 
   // A broad, distant ridge, partially hidden by the nearer treeline.
   function ridge(x, z, width, depth, height, phase) {
@@ -234,6 +232,18 @@ export function createLandscape(THREE) {
   for (let i = 0; i < 90; i++) {
     tree(between(-58, 64), between(-65, -28), between(5.5, 9.5), between(2.1, 4), true);
   }
+  // The reference photographs show a green corridor around the entrance lane.
+  // Keep the closest east-side trees below the original elevated house camera.
+  for (const [x, z, height, radius] of [
+    [8.6, 16.9, 5.5, 2.3], [8.8, 21.7, 6.4, 2.7], [10.2, 26.5, 6.8, 3.0],
+    [-8.3, 17.8, 6.5, 2.6], [-8.7, 22.8, 7.7, 3.1], [-7.1, 27.2, 7.2, 2.5],
+    [6.8, 30.7, 8.1, 2.8], [-5.2, 34.3, 7.7, 2.7], [7.2, 37.1, 7.0, 2.6],
+    [-5.6, 41.3, 7.1, 2.6], [7.3, 44.9, 6.4, 2.7],
+  ]) tree(x, z, height, radius);
+  for (let i = 0; i < 28; i++) {
+    const side = i % 2 ? -1 : 1;
+    tree(side * between(12, 25), between(19, 53), between(6.3, 9.5), between(2.3, 3.5), true);
+  }
   instanced(twigGeometry, bark, trunks);
   instanced(twigGeometry, bark, branches);
   instanced(canopyGeometry, canopyMaterial, crowns);
@@ -275,6 +285,12 @@ export function createLandscape(THREE) {
     else { x = between(12.7, 23); z = between(-17, 7); }
     const size = between(0.9, 1.95);
     lowBushes.push({ position: [x, between(0.5, 3.1), z], scale: [size * 1.2, size, size], rotation: [between(-0.3, 0.3), random() * 6, 0], color: treePalette[Math.floor(random() * treePalette.length)] });
+  }
+  for (let i = 0; i < 64; i++) {
+    const side = i % 2 ? -1 : 1, z = between(15, 47);
+    const edge = z < 26 ? between(7.1, 10) : between(5, 8.5);
+    const size = between(.45, 1.25);
+    lowBushes.push({ position: [side * edge, size * .6 - .18, z], scale: [size * 1.2, size, size], rotation: [0, random() * 6, 0], color: treePalette[Math.floor(random() * treePalette.length)] });
   }
   instanced(canopyGeometry, canopyMaterial, lowBushes);
 
