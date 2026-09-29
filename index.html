@@ -1,1 +1,69 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#233d33"><meta name="description" content="循着山路回家，探索可以漫步、拾取的乡间三维世界。"><title>山居 · 回到风经过的地方</title><link rel="icon" href="./favicon.svg"></head><body><div id="world"></div><div class="vignette"></div><header><a class="brand" href="./"><span class="brand-icon">⌂</span><span>山居<small>MOUNTAIN HOME</small></span></a><div class="top-right"><span class="live-dot"></span><span id="location">山间小院</span><button id="sound" aria-label="开关环境音">声音 关</button><button id="help" aria-label="操作帮助">?</button></div></header><main id="welcome"><div class="eyebrow">A PLACE TO RETURN TO</div><h1>重访<br>照片里的家<span>。</span></h1><p>依照实景重建白墙、青瓦与山林。<br>走上阳台，看看熟悉的风景。</p><button id="enter" class="primary">走进山居 <span>↗</span></button><div class="entry-note">自由探索 · 第一人称 · 无需下载</div></main><aside class="scene-label" id="scene-label"><span>01 / 山林里的家</span><div>白墙青瓦，草木之间</div><small>照片参考重建 · 门窗原图纹理 · 可自由行走</small></aside><footer id="landing-footer"><span>山野漫游 / INTERACTIVE WORLD</span><span>用一点时间，找回生活的慢。</span></footer><div id="game-ui" hidden><div id="crosshair"></div><div id="interaction" hidden></div><div class="quest"><span class="eyebrow">院子里的小事</span><strong>拾起散落的日常</strong><p>在院子与屋内寻找 3 件小物</p><div id="inventory"><span>○ 竹篮</span><span>○ 柴木</span><span>○ 陶杯</span></div><small id="quest-status">靠近物品，瞄准后拾取</small></div><div class="bottom-hud"><button id="pause">☰ 暂停</button><span class="desktop-help">W A S D 移动　鼠标 环顾　E 拾取 / 开门　空格 跳跃　Shift 快走</span><button id="reset">返回院子</button></div><div id="touch-controls"><div id="joystick" aria-label="移动摇杆"><div id="stick"></div></div><div class="touch-actions"><button id="touch-interact">拾取 / 开门</button><button id="touch-jump">跳跃 ↑</button></div><span class="look-hint">右侧滑动环顾</span></div></div><dialog id="menu"><button class="close" id="close-menu" aria-label="关闭">×</button><span class="eyebrow">TAKE YOUR TIME</span><h2>在山居，慢慢走</h2><p>电脑：WASD / 方向键行走，鼠标环顾，E 拾取或开门，空格跳跃，Shift 快走，Esc 释放鼠标。</p><p>手机：左侧摇杆移动，右侧空白区域滑动环顾，点击按钮互动。横屏视野更开阔。</p><label>画面品质 <select id="quality"><option value="high">精细</option><option value="low">流畅（适合手机）</option></select></label><p class="muted">当前按单张照片的可见比例重建，尚无实测尺寸。室内、背面与遮挡部分为推测补全。</p><button id="overview" class="secondary">返回照片参考视角</button><button id="resume" class="primary">继续漫步 <span>→</span></button></dialog><div id="toast" role="status"></div><script type="module" src="/src/main.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#e8e9df" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="description" content="从一张照片，重访山间的家。可交互的乡村住宅三维场景。" />
+    <title>山居 · 空间复刻</title>
+  </head>
+  <body>
+    <canvas id="scene" aria-label="可交互的山间住宅三维场景"></canvas>
+
+    <header class="topbar">
+      <div class="identity">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none"><path d="m4 16 12-9 12 9M8 14v12h16V14M13 26V16h6v10"/><path d="m3 23 4-4m18 0 4 4"/></svg>
+        </div>
+        <div class="brand-copy"><h1>山居<span class="brand-divider"></span><span>空间复刻</span></h1><p>建筑场景 <span>·</span> 01</p></div>
+      </div>
+      <nav class="top-actions" aria-label="场景工具">
+        <button class="action-button is-active" id="reference-toggle" type="button" aria-label="显示或隐藏参考图" aria-pressed="true" title="参考图">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m21 16-5-5-7 7-3-3-3 3"/></svg><span>参考图</span>
+        </button>
+        <button class="action-button" id="capture" type="button" aria-label="保存场景截图" title="保存截图">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h4l2-3h4l2 3h4a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="4"/></svg><span>截图</span>
+        </button>
+        <span class="action-divider" aria-hidden="true"></span>
+        <button class="action-button export-button" id="export-model" type="button" aria-label="导出三维模型" title="导出三维模型">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5"/></svg><span>导出模型</span>
+        </button>
+      </nav>
+    </header>
+
+    <aside class="reference-card" id="reference-panel" aria-label="原始参考影像">
+      <div class="reference-card-header"><span><span class="reference-dot"></span>原始影像</span><button class="plain-icon-button" id="reference-close" type="button" aria-label="关闭参考图" title="关闭参考图"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+      <div class="reference-image-wrap"><img src="/reference.jpg" alt="山林间的白墙蓝瓦住宅原始照片" /></div>
+      <div class="reference-card-footer"><span>单张照片 <i>·</i> 空间重建</span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8V4h4m8 0h4v4M4 16v4h4m8 0h4v-4"/></svg></div>
+    </aside>
+
+    <aside class="settings-panel" id="settings-panel" hidden aria-label="场景设置">
+      <div class="settings-heading"><h2>场景设置</h2><span>SCENE</span></div>
+      <label class="toggle-row" for="show-landscape"><span>周边山林</span><input id="show-landscape" type="checkbox" checked /><span class="switch" aria-hidden="true"></span></label>
+      <label class="toggle-row" for="wireframe"><span>线框模式</span><input id="wireframe" type="checkbox" /><span class="switch" aria-hidden="true"></span></label>
+      <div class="light-control"><label for="light-time">光照时刻</label><div class="range-row"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 19h18M5 15h14M7 11a5 5 0 0 1 10 0M12 2v2M3 6l2 2m16-2-2 2"/></svg><input id="light-time" type="range" min="0" max="1" step="0.01" value="0.62" aria-label="调整光照时刻" /><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></div></div>
+      <button class="reset-button" id="reset-scene" type="button"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></svg>重置场景</button>
+    </aside>
+
+    <div class="scene-tools" role="group" aria-label="展示设置">
+      <button class="tool-button" id="auto-rotate" type="button" aria-label="自动环绕" aria-pressed="false" title="自动环绕"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 10a8 8 0 0 0-14-5L3 8m0-5v5h5m-4 6a8 8 0 0 0 14 5l3-3m0 5v-5h-5"/></svg></button>
+      <button class="tool-button" id="settings-toggle" type="button" aria-label="场景设置" aria-expanded="false" title="场景设置"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button>
+    </div>
+
+    <footer class="bottom-bar">
+      <div class="interaction-hints"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="6"/><path d="M12 2v7"/></svg><span>拖动旋转</span><i>·</i><span>滚轮缩放</span><i>·</i><span>右键平移</span></div>
+      <nav class="view-switcher" aria-label="切换观察视角">
+        <button class="view-button is-active" data-view="reference" type="button" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 8V4h5m8 0h5v4M3 16v4h5m8 0h5v-4"/><rect x="7" y="8" width="10" height="8" rx="1"/></svg><span>原图视角</span></button>
+        <button class="view-button" data-view="orbit" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m12 3 7 4v9l-7 4-7-4V7l7-4Zm0 8v9M5 7l7 4 7-4M2 13c-3 5 16 11 20 3"/></svg><span>全景环绕</span></button>
+        <button class="view-button" data-view="front" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8"/></svg><span>正立面</span></button>
+        <button class="view-button" data-view="top" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m12 3 10 6-10 6L2 9l10-6Zm-9 11 9 5 9-5m-18 5 9 5 9-5" transform="translate(0 -2)"/></svg><span>鸟瞰</span></button>
+      </nav>
+      <div class="scene-note"><span class="live-dot"></span>实时 3D 场景</div>
+    </footer>
+
+    <div id="loading" class="loading-overlay" role="status" aria-live="polite"><div class="loading-content"><div class="loading-house"><svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="m7 23 17-13 17 13M12 20v19h24V20M20 39V25h8v14"/></svg></div><span class="loading-eyebrow">山居 · 空间复刻</span><p>正在构建山间的家</p><div class="loading-line"><span></span></div><span id="loading-progress">0%</span></div></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

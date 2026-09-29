@@ -1,8 +1,6 @@
 node_modules/
 dist/
-test-results/
 .npm-cache/
-.playwright/
 artifacts/
-.deploy-repo/
-.DS_Store
+*.log
+.deployment/
