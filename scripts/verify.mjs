@@ -209,7 +209,11 @@ try {
         localBox.max.toArray().forEach((value, index) => { localBounds.max[index] = Math.max(localBounds.max[index], value); });
       }
     });
-    for (const name of ['sculpted-body', 'green-wraparound-glazing', 'body-trim-and-sliding-door', 'silver-door-mirrors', 'four-steel-wheels', 'stamped-roof-ribs', 'classic-shuttle-front', 'rear-tailgate-and-lamps', 'jac-and-refine-badging']) {
+    for (const name of [
+      'sculpted-body', 'dark-wraparound-glazing', 'body-trim-and-sliding-door', 'silver-door-mirrors',
+      'four-alloy-wheels', 'stamped-roof-ribs', 'classic-shuttle-front', 'rear-tailgate-and-lamps', 'jac-and-refine-badging',
+      'vertical-slat-grille', 'four-opening-lower-intake', 'recessed-round-fog-lamps', 'five-spoke-alloy-centers',
+    ]) {
       const feature = vehicle?.getObjectByName(name);
       const featureBounds = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
       let meshCount = 0;
@@ -255,13 +259,28 @@ try {
     assert.ok(feature.meshCount > 0, `JAC recognizable feature must contain actual geometry: ${feature.name}`);
   }
   const featureBounds = name => forecourtState.vehicleFeatures.find(feature => feature.name === name).bounds;
-  // This group also includes bonnet seams extending back to z ≈ 1.83 m.
-  assert.ok(featureBounds('classic-shuttle-front').min[2] > 1.7 && featureBounds('classic-shuttle-front').max[2] > 2.45, 'Classic JAC front details must remain ahead of the cabin and extend to the nose');
+  // This group also includes the longer bonnet seams back to z ≈ 1.43 m.
+  assert.ok(featureBounds('classic-shuttle-front').min[2] > 1.3 && featureBounds('classic-shuttle-front').max[2] > 2.45, 'Classic JAC front details must remain ahead of the cabin and extend to the nose');
   assert.ok(featureBounds('rear-tailgate-and-lamps').max[2] < -2, 'Tailgate and rear lamps must sit at the rear of the vehicle');
   assert.ok(featureBounds('stamped-roof-ribs').min[1] > 1.8, 'Stamped ribs must be on the high roof');
-  assert.ok(featureBounds('four-steel-wheels').max[1] < .85, 'Wheels must stay below the passenger cabin');
+  assert.ok(featureBounds('four-alloy-wheels').max[1] < .85, 'Wheels must stay below the passenger cabin');
   assert.ok(featureBounds('silver-door-mirrors').min[0] < -.95 && featureBounds('silver-door-mirrors').max[0] > .95, 'Both door mirrors must extend beyond the body');
   passed('JAC Chuansuo body details are modeled as visible geometry', 'High ribbed roof, side sliding door, mirrors, four wheels, classic front, tailgate and badging');
+  const grille = featureBounds('vertical-slat-grille');
+  const intake = featureBounds('four-opening-lower-intake');
+  const fogLamps = featureBounds('recessed-round-fog-lamps');
+  const alloyCenters = featureBounds('five-spoke-alloy-centers');
+  for (const name of ['vertical-slat-grille', 'four-opening-lower-intake', 'recessed-round-fog-lamps']) {
+    const bounds = featureBounds(name);
+    assert.ok(bounds.min[2] > 2, `${name}: front detail must be mounted on the nose`);
+    closeTo((bounds.min[0] + bounds.max[0]) / 2, 0, `${name}: front details must be symmetric`, .03);
+  }
+  assert.ok(intake.max[1] < grille.min[1], 'Broad lower intake must sit below the vertical-slat upper grille');
+  assert.ok(intake.max[0] - intake.min[0] > grille.max[0] - grille.min[0], 'Lower bumper intake must be wider than the small upper grille');
+  assert.ok(fogLamps.max[1] < grille.min[1] && fogLamps.min[0] < -.5 && fogLamps.max[0] > .5, 'Round fog lamps must occupy both lower bumper corners');
+  assert.ok(alloyCenters.max[1] < .85 && alloyCenters.min[0] < -.75 && alloyCenters.max[0] > .75, 'Alloy centers must appear on wheels on both sides below the cabin');
+  assert.ok(alloyCenters.min[2] < -1.3 && alloyCenters.max[2] > 1.3, 'Alloy centers must appear on both wheel axles');
+  passed('Vehicle reference features occupy the correct body locations', 'Symmetric vertical grille, wider lower intake, recessed bumper fog lamps and alloy centers on all four wheels');
 
   for (const name of ['orbit', 'front', 'top', 'courtyard', 'reference']) {
     const before = await state();
